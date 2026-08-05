@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Minimal Web YouTube Client</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: '#FF0000',
+            darkBg: '#0f0f0f',
+            darkCard: '#181818',
+            darkHover: '#272727'
+          }
+        }
+      }
+    }
+  </script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+    /* TV / Focus Mode Highlighting */
+    .tv-mode .tv-focusable:focus,
+    .tv-mode .tv-focusable.tv-focused {
+      outline: 4px solid #FF0000 !important;
+      outline-offset: 2px;
+      transform: scale(1.02);
+      transition: transform 0.15s ease, outline 0.15s ease;
+      z-index: 20;
+    }
+
+    /* Aspect Ratio Container for Responsive Video */
+    .video-container {
+      position: relative;
+      padding-bottom: 56.25%; /* 16:9 */
+      height: 0;
+      overflow: hidden;
+    }
+    .video-container iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+  </style>
+</head>
+<body class="bg-darkBg text-zinc-100 min-h-screen flex flex-col font-sans antialiased selection:bg-brand selection:text-white">
+
+  <!-- TOP NAVBAR -->
+  <header class="sticky top-0 z-40 bg-darkBg/95 backdrop-blur border-b border-zinc-800 px-4 py-2.5 flex items-center justify-between gap-4">
+    <!-- Brand / Mobile Nav Toggle -->
+    <div class="flex items-center gap-4">
+      <button id="sidebar-toggle" class="p-2 hover:bg-darkHover rounded-full text-zinc-300 tv-focusable" aria-label="Toggle Navigation">
+        <i class="fa-solid fa-bars text-lg"></i>
+      </button>
+      <div onclick="navigateTo('home')" class="flex items-center gap-2 cursor-pointer tv-focusable" tabindex="0">
+        <i class="fa-brands fa-youtube text-brand text-2xl"></i>
+        <span class="font-bold text-lg tracking-tight hidden sm:inline">CleanTube</span>
+      </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="flex-1 max-w-2xl mx-2">
+      <form id="search-form" onsubmit="handleSearch(event)" class="flex items-center">
+        <div class="relative flex-1">
+          <input type="text" id="search-input" placeholder="Search videos..." class="w-full bg-zinc-900 border border-zinc-700 focus:border-brand rounded-l-full px-4 py-2 text-sm text-zinc-100 focus:outline-none transition tv-focusable" />
+        </div>
+        <button type="submit" class="bg-zinc-800 hover:bg-zinc-700 border border-l-0 border-zinc-700 rounded-r-full px-5 py-2 text-zinc-300 text-sm tv-focusable" aria-label="Search">
+          <i class="fa-solid fa-magnifying-glass"></i>
+        </button>
+      </form>
+    </div>
+
+    <!-- Header Actions -->
+    <div class="flex items-center gap-2">
+      <button onclick="toggleTVMode()" id="tv-mode-btn" class="p-2 hover:bg-darkHover rounded-full text-zinc-300 text-sm flex items-center gap-1.5 px-3 border border-zinc-700 tv-focusable" title="Toggle TV / Keyboard Navigation Mode">
+        <i class="fa-solid fa-tv"></i>
+        <span class="text-xs hidden md:inline">TV Mode</span>
+      </button>
+      <button onclick="openModal('settings-modal')" class="p-2 hover:bg-darkHover rounded-full text-zinc-300 tv-focusable" aria-label="Settings">
+        <i class="fa-solid fa-gear text-lg"></i>
+      </button>
+      <div id="auth-container">
+        <button onclick="handleAuth()" id="login-btn" class="flex items-center gap-2 text-sm text-brand font-medium border border-zinc-700 hover:bg-brand/10 px-3 py-1.5 rounded-full tv-focusable">
+          <i class="fa-regular fa-user-circle text-base"></i>
+          <span>Sign In</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN BODY LAYOUT -->
+  <div class="flex flex-1 overflow-hidden">
+    <!-- SIDEBAR NAV -->
+    <aside id="sidebar" class="w-64 bg-darkBg border-r border-zinc-800 flex-shrink-0 flex flex-col justify-between p-3 transition-all duration-200">
+      <nav class="space-y-1">
+        <button onclick="navigateTo('home')" class="nav-btn w-full flex items-center gap-4 px-3 py-2.5 rounded-xl hover:bg-darkHover text-sm font-medium text-zinc-200 transition tv-focusable" data-view="home">
+          <i class="fa-solid fa-house text-lg w-6 text-center"></i>
+          <span>Home</span>
+        </button>
+        <button onclick="navigateTo('shorts')" class="nav-btn w-full flex items-center gap-4 px-3 py-2.5 rounded-xl hover:bg-darkHover text-sm font-medium text-zinc-400 hover:text-zinc-200 transition tv-focusable" data-view="shorts">
+          <i class="fa-solid fa-bolt text-lg w-6 text-center text-brand"></i>
+          <span>Shorts</span>
+        </button>
+        <button onclick="navigateTo('subscriptions')" class="nav-btn w-full flex items-center gap-4 px-3 py-2.5 rounded-xl hover:bg-darkHover text-sm font-medium text-zinc-400 hover:text-zinc-200 transition tv-focusable" data-view="subscriptions">
+          <i class="fa-solid fa-newspaper text-lg w-6 text-center"></i>
+          <span>Subscriptions</span>
+        </button>
+        <button onclick="navigateTo('history')" class="nav-btn w-full flex items-center gap-4 px-3 py-2.5 rounded-xl hover:bg-darkHover text-sm font-medium text-zinc-400 hover:text-zinc-200 transition tv-focusable" data-view="history">
+          <i class="fa-solid fa-clock-rotate-left text-lg w-6 text-center"></i>
+          <span>Watch History</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar Footer -->
+      <div class="pt-4 border-t border-zinc-800 text-xs text-zinc-500 px-3 space-y-2">
+        <p>Zero-Ads YouTube Client</p>
+        <p class="text-[10px]">Static Deployment Ready</p>
+      </div>
+    </aside>
+
+    <!-- MAIN VIEW CONTAINER -->
+    <main class="flex-1 overflow-y-auto p-4 md:p-6" id="main-content">
+      
+      <!-- VIEW: HOME / SEARCH RESULTS -->
+      <section id="view-home" class="view-section space-y-6">
+        <!-- Categories Filter Rail -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none" id="category-rail">
+          <button onclick="filterCategory('All')" class="cat-btn px-3.5 py-1.5 bg-zinc-100 text-zinc-900 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">All</button>
+          <button onclick="filterCategory('Music')" class="cat-btn px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">Music</button>
+          <button onclick="filterCategory('Gaming')" class="cat-btn px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">Gaming</button>
+          <button onclick="filterCategory('Technology')" class="cat-btn px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">Technology</button>
+          <button onclick="filterCategory('News')" class="cat-btn px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">News</button>
+          <button onclick="filterCategory('Podcasts')" class="cat-btn px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">Podcasts</button>
+        </div>
+
+        <!-- Video Grid -->
+        <div id="video-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+          <!-- Dynamically populated video cards -->
+        </div>
+      </section>
+
+      <!-- VIEW: WATCH PAGE -->
+      <section id="view-watch" class="view-section hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Primary Video Player & Metadata -->
+          <div class="lg:col-span-2 space-y-4">
+            <!-- Embed Player Container -->
+            <div id="player-wrapper" class="bg-black rounded-2xl overflow-hidden shadow-2xl border border-zinc-800 video-container">
+              <iframe id="main-player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen class="w-full h-full"></iframe>
+            </div>
+
+            <!-- Video Title & Actions -->
+            <div class="space-y-3">
+              <h1 id="watch-title" class="text-xl font-bold line-clamp-2 text-zinc-100">Loading Video Title...</h1>
+              
+              <div class="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-zinc-800">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-zinc-300" id="channel-avatar">
+                    <i class="fa-solid fa-user"></i>
+                  </div>
+                  <div>
+                    <h3 id="watch-channel" class="font-semibold text-sm text-zinc-200">Channel Name</h3>
+                    <p id="watch-subcount" class="text-xs text-zinc-400">Subscriber count</p>
+                  </div>
+                </div>
+
+                <!-- Engagement Buttons -->
+                <div class="flex items-center gap-2">
+                  <div class="flex items-center bg-zinc-800 rounded-full border border-zinc-700 overflow-hidden">
+                    <button onclick="toggleLike()" id="like-btn" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-zinc-700 border-r border-zinc-700 tv-focusable">
+                      <i class="fa-regular fa-thumbs-up" id="like-icon"></i>
+                      <span id="like-count">0</span>
+                    </button>
+                    <button onclick="toggleDislike()" id="dislike-btn" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-zinc-700 tv-focusable">
+                      <i class="fa-regular fa-thumbs-down" id="dislike-icon"></i>
+                      <span id="dislike-count">Local</span>
+                    </button>
+                  </div>
+                  <button onclick="shareVideo()" class="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-full text-sm font-medium border border-zinc-700 tv-focusable">
+                    <i class="fa-solid fa-share"></i>
+                    <span>Share</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Description Box -->
+              <div class="bg-zinc-900/90 rounded-xl p-4 text-sm text-zinc-300 space-y-2 border border-zinc-800/80">
+                <div class="flex gap-3 text-xs text-zinc-400 font-medium">
+                  <span id="watch-views">-- views</span>
+                  <span id="watch-date">--</span>
+                </div>
+                <p id="watch-description" class="whitespace-pre-line text-xs md:text-sm leading-relaxed">
+                  Video description will render here...
+                </p>
+              </div>
+
+              <!-- Comments Section -->
+              <div class="pt-4 space-y-4">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                  <span>Comments</span>
+                  <span class="text-xs font-normal text-zinc-400">(Read-Only API)</span>
+                </h3>
+                <div id="comments-container" class="space-y-4">
+                  <!-- Comments rendered dynamically -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Secondary Sidebar: Related Videos -->
+          <div class="space-y-4">
+            <h3 class="font-semibold text-base text-zinc-200">Recommended Videos</h3>
+            <div id="related-videos-grid" class="flex flex-col gap-3">
+              <!-- Dynamically populated related cards -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: SHORTS -->
+      <section id="view-shorts" class="view-section hidden max-w-md mx-auto py-2">
+        <div class="flex flex-col items-center gap-6">
+          <div class="relative w-full aspect-[9/16] bg-black rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl">
+            <iframe id="shorts-player" class="w-full h-full" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+          </div>
+          <div class="flex items-center gap-4">
+            <button onclick="prevShort()" class="p-4 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-200 tv-focusable" aria-label="Previous Short">
+              <i class="fa-solid fa-arrow-up text-xl"></i>
+            </button>
+            <button onclick="nextShort()" class="p-4 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-200 tv-focusable" aria-label="Next Short">
+              <i class="fa-solid fa-arrow-down text-xl"></i>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: SUBSCRIPTIONS -->
+      <section id="view-subscriptions" class="view-section hidden space-y-4">
+        <h2 class="text-2xl font-bold">Subscribed Channels</h2>
+        <p class="text-sm text-zinc-400" id="sub-status-desc">Sign in with Google to sync your actual YouTube subscriptions.</p>
+        <div id="subscriptions-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <!-- Channels list -->
+        </div>
+      </section>
+
+      <!-- VIEW: WATCH HISTORY -->
+      <section id="view-history" class="view-section hidden space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-2xl font-bold">Local Watch History</h2>
+            <p class="text-xs text-zinc-400">Stored locally in your browser session</p>
+          </div>
+          <button onclick="clearHistory()" class="px-3 py-1.5 text-xs text-red-400 hover:bg-red-950/40 rounded-lg border border-red-900/50 tv-focusable">
+            <i class="fa-solid fa-trash mr-1"></i> Clear History
+          </button>
+        </div>
+        <div id="history-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <!-- History items -->
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div id="settings-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-darkCard border border-zinc-800 w-full max-w-xl rounded-2xl p-6 space-y-6 shadow-2xl overflow-y-auto max-h-[90vh]">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+        <h2 class="text-xl font-bold flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-brand"></i>
+          <span>App Settings & Configuration</span>
+        </h2>
+        <button onclick="closeModal('settings-modal')" class="p-1 text-zinc-400 hover:text-white rounded-lg tv-focusable" aria-label="Close Settings">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 text-sm">
+        <!-- API Credentials Config -->
+        <div class="space-y-3 p-4 bg-zinc-900/80 rounded-xl border border-zinc-800">
+          <h3 class="font-semibold text-zinc-200">YouTube API Credentials</h3>
+          <p class="text-xs text-zinc-400">Enter your Google Data API v3 Key and OAuth Client ID to fetch live data and sync account details.</p>
+          
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1">YouTube Data API Key</label>
+            <input type="password" id="cfg-api-key" placeholder="AIzaSy..." class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs focus:border-brand focus:outline-none" />
+          </div>
+
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1">Google OAuth 2.0 Client ID</label>
+            <input type="text" id="cfg-client-id" placeholder="xxxxx.apps.googleusercontent.com" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs focus:border-brand focus:outline-none" />
+          </div>
+        </div>
+
+        <!-- Zero-Ads Player Backend Toggle -->
+        <div class="space-y-3 p-4 bg-zinc-900/80 rounded-xl border border-zinc-800">
+          <h3 class="font-semibold text-zinc-200">Zero-Ads Player Backend</h3>
+          <p class="text-xs text-zinc-400">Choose your preferred embed engine for ad-minimized playback:</p>
+          <select id="cfg-player-type" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs focus:border-brand text-zinc-200">
+            <option value="nocookie">Official YouTube Privacy-Enhanced Embed (youtube-nocookie.com)</option>
+            <option value="invidious">Invidious Privacy Wrapper Embed</option>
+            <option value="piped">Piped Proxy Embed</option>
+          </select>
+        </div>
+
+        <!-- Display & Density -->
+        <div class="space-y-3 p-4 bg-zinc-900/80 rounded-xl border border-zinc-800">
+          <h3 class="font-semibold text-zinc-200">Display & Behavior</h3>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-zinc-300">Autoplay Next Video</span>
+            <input type="checkbox" id="cfg-autoplay" class="accent-brand h-4 w-4 rounded" />
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-zinc-300">Compact Layout Density</span>
+            <input type="checkbox" id="cfg-compact" class="accent-brand h-4 w-4 rounded" />
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-3 border-t border-zinc-800 pt-4">
+        <button onclick="closeModal('settings-modal')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-xs font-medium rounded-lg text-zinc-300 tv-focusable">Cancel</button>
+        <button onclick="saveSettings()" class="px-4 py-2 bg-brand hover:bg-red-700 text-xs font-medium rounded-lg text-white tv-focusable">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- APPLICATION JAVASCRIPT LOGIC -->
+  <script>
+    // APP STATE & STORAGE
+    const STATE = {
+      apiKey: localStorage.getItem('yt_api_key') || '',
+      clientId: localStorage.getItem('yt_client_id') || '',
+      accessToken: localStorage.getItem('yt_access_token') || '',
+      playerType: localStorage.getItem('yt_player_type') || 'nocookie',
+      autoplay: localStorage.getItem('yt_autoplay') === 'true',
+      compact: localStorage.getItem('yt_compact') === 'true',
+      isTVMode: false,
+      currentView: 'home',
+      currentVideoId: null,
+      history: JSON.parse(localStorage.getItem('yt_watch_history') || '[]'),
+      likedVideos: JSON.parse(localStorage.getItem('yt_liked_videos') || '[]'),
+      shortsList: ['1Xp2J6Q0Y2A', 'dQw4w9WgXcQ', 'kffacxfA7G4', '9bZkp7q19f0'],
+      shortIndex: 0,
+      tvFocusedIndex: 0
+    };
+
+    // MOCK DATA FALLBACK (Used if no API key is supplied)
+    const MOCK_VIDEOS = [
+      { id: 'dQw4w9WgXcQ', title: 'Rick Astley - Never Gonna Give You Up (Official Music Video)', channelTitle: 'Rick Astley', views: '1.5B views', publishedAt: '14 years ago', thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg', category: 'Music' },
+      { id: 'L_LUpnjgPso', title: 'Official Launch Trailer | Web Apps Built Clean', channelTitle: 'Tech Explore', views: '420K views', publishedAt: '2 days ago', thumbnail: 'https://i.ytimg.com/vi/L_LUpnjgPso/mqdefault.jpg', category: 'Technology' },
+      { id: '3JZ_D3ELwOQ', title: 'Relaxing Lo-Fi Beats to Study/Relax To', channelTitle: 'Chill Vibes', views: '12M views', publishedAt: '3 months ago', thumbnail: 'https://i.ytimg.com/vi/3JZ_D3ELwOQ/mqdefault.jpg', category: 'Music' },
+      { id: 'fJ9rUzIMcZQ', title: 'How Modern Web Architecture Bypasses Ads', channelTitle: 'Code Master', views: '89K views', publishedAt: '1 week ago', thumbnail: 'https://i.ytimg.com/vi/fJ9rUzIMcZQ/mqdefault.jpg', category: 'Technology' },
+      { id: 'kJQP7kiw5Fk', title: 'Despacito - Piano Instrumentals', channelTitle: 'Music Box', views: '3.4M views', publishedAt: '1 year ago', thumbnail: 'https://i.ytimg.com/vi/kJQP7kiw5Fk/mqdefault.jpg', category: 'Music' },
+      { id: '2Vv-BfVoq4g', title: 'Top 10 Indie Games Coming Soon', channelTitle: 'Gamer Realm', views: '210K views', publishedAt: '5 days ago', thumbnail: 'https://i.ytimg.com/vi/2Vv-BfVoq4g/mqdefault.jpg', category: 'Gaming' }
+    ];
+
+    // INITIALIZATION
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSettingsInputs();
+      renderHomeGrid(MOCK_VIDEOS);
+      setupTVNavigation();
+
+      if (STATE.apiKey) {
+        fetchPopularVideos();
+      }
+    });
+
+    // NAVIGATION SYSTEM
+    function navigateTo(viewName, param = null) {
+      STATE.currentView = viewName;
+      document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+      const activeSec = document.getElementById(`view-${viewName}`);
+      if (activeSec) activeSec.classList.remove('hidden');
+
+      // Update Nav Buttons Active State
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        if (btn.dataset.view === viewName) {
+          btn.classList.add('bg-darkHover', 'text-zinc-100');
+        } else {
+          btn.classList.remove('bg-darkHover', 'text-zinc-100');
+        }
+      });
+
+      if (viewName === 'watch' && param) {
+        loadWatchPage(param);
+      } else if (viewName === 'shorts') {
+        loadShortsPage();
+      } else if (viewName === 'history') {
+        renderHistoryGrid();
+      } else if (viewName === 'subscriptions') {
+        loadSubscriptions();
+      }
+    }
+
+    // HOME & SEARCH RENDERING
+    function renderHomeGrid(videos) {
+      const grid = document.getElementById('video-grid');
+      grid.innerHTML = '';
+
+      videos.forEach(v => {
+        const videoId = typeof v.id === 'string' ? v.id : (v.id.videoId || v.id);
+        const card = document.createElement('div');
+        card.className = "bg-darkCard rounded-xl overflow-hidden border border-zinc-800/60 hover:border-zinc-700 transition cursor-pointer group tv-focusable";
+        card.tabIndex = 0;
+        card.onclick = () => navigateTo('watch', videoId);
+
+        card.innerHTML = `
+          <div class="relative aspect-video bg-zinc-900 overflow-hidden">
+            <img src="${v.thumbnail || v.snippet?.thumbnails?.medium?.url}" alt="${v.title}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy" />
+          </div>
+          <div class="p-3 space-y-1.5">
+            <h3 class="font-medium text-sm line-clamp-2 text-zinc-100 group-hover:text-brand transition">${v.title || v.snippet?.title}</h3>
+            <p class="text-xs text-zinc-400">${v.channelTitle || v.snippet?.channelTitle}</p>
+            <p class="text-[11px] text-zinc-500">${v.views || '100K views'} • ${v.publishedAt || 'Recently'}</p>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    // WATCH PAGE LOGIC
+    function loadWatchPage(videoId) {
+      STATE.currentVideoId = videoId;
+      recordWatchHistory(videoId);
+
+      // Embed URL Builder based on player setting
+      const playerIframe = document.getElementById('main-player');
+      let embedSrc = '';
+      if (STATE.playerType === 'invidious') {
+        embedSrc = `https://invidious.io/embed/${videoId}?autoplay=1`;
+      } else if (STATE.playerType === 'piped') {
+        embedSrc = `https://piped.video/embed/${videoId}?autoplay=1`;
+      } else {
+        // Default: youtube-nocookie
+        embedSrc = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&modestbranding=1&rel=0`;
+      }
+      playerIframe.src = embedSrc;
+
+      // Populate Video Info
+      if (STATE.apiKey) {
+        fetchVideoDetails(videoId);
+        fetchComments(videoId);
+      } else {
+        const mock = MOCK_VIDEOS.find(m => m.id === videoId) || MOCK_VIDEOS[0];
+        document.getElementById('watch-title').innerText = mock.title;
+        document.getElementById('watch-channel').innerText = mock.channelTitle;
+        document.getElementById('watch-views').innerText = mock.views;
+        document.getElementById('watch-date').innerText = mock.publishedAt;
+        document.getElementById('watch-description').innerText = "Playing in zero-ads mode. Configure your API key in Settings to render live channel details & real comments.";
+        renderRelatedGrid(MOCK_VIDEOS);
+      }
+    }
+
+    // WATCH HISTORY MANAGEMENT
+    function recordWatchHistory(videoId) {
+      const existingIdx = STATE.history.findIndex(h => h.id === videoId);
+      if (existingIdx !== -1) STATE.history.splice(existingIdx, 1);
+
+      const mockMatch = MOCK_VIDEOS.find(m => m.id === videoId);
+      const item = {
+        id: videoId,
+        title: mockMatch ? mockMatch.title : `Video ${videoId}`,
+        thumbnail: mockMatch ? mockMatch.thumbnail : `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+        timestamp: new Date().toLocaleTimeString()
+      };
+
+      STATE.history.unshift(item);
+      localStorage.setItem('yt_watch_history', JSON.stringify(STATE.history));
+    }
+
+    function renderHistoryGrid() {
+      const grid = document.getElementById('history-grid');
+      grid.innerHTML = '';
+      if (STATE.history.length === 0) {
+        grid.innerHTML = `<p class="text-sm text-zinc-500 col-span-full">No watch history recorded yet.</p>`;
+        return;
+      }
+      STATE.history.forEach(item => {
+        const card = document.createElement('div');
+        card.className = "bg-darkCard rounded-xl overflow-hidden border border-zinc-800 p-2 flex gap-3 items-center cursor-pointer hover:border-zinc-700 tv-focusable";
+        card.onclick = () => navigateTo('watch', item.id);
+        card.innerHTML = `
+          <img src="${item.thumbnail}" class="w-24 aspect-video object-cover rounded-lg" />
+          <div class="overflow-hidden">
+            <h4 class="text-xs font-semibold line-clamp-2 text-zinc-200">${item.title}</h4>
+            <p class="text-[10px] text-zinc-500 mt-1">Watched: ${item.timestamp}</p>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function clearHistory() {
+      STATE.history = [];
+      localStorage.removeItem('yt_watch_history');
+      renderHistoryGrid();
+    }
+
+    // SHORTS PAGE LOGIC
+    function loadShortsPage() {
+      const shortId = STATE.shortsList[STATE.shortIndex];
+      const shortsPlayer = document.getElementById('shorts-player');
+      shortsPlayer.src = `https://www.youtube-nocookie.com/embed/${shortId}?autoplay=1&loop=1&modestbranding=1`;
+    }
+
+    function nextShort() {
+      STATE.shortIndex = (STATE.shortIndex + 1) % STATE.shortsList.length;
+      loadShortsPage();
+    }
+
+    function prevShort() {
+      STATE.shortIndex = (STATE.shortIndex - 1 + STATE.shortsList.length) % STATE.shortsList.length;
+      loadShortsPage();
+    }
+
+    // REAL YOUTUBE API INTEGRATIONS
+    async function fetchPopularVideos() {
+      try {
+        const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&chart=mostPopular&maxResults=16&key=${STATE.apiKey}`);
+        const data = await res.json();
+        if (data.items) {
+          const videos = data.items.map(item => ({
+            id: item.id,
+            title: item.snippet.title,
+            channelTitle: item.snippet.channelTitle,
+            views: parseInt(item.statistics.viewCount).toLocaleString() + ' views',
+            publishedAt: new Date(item.snippet.publishedAt).toLocaleDateString(),
+            thumbnail: item.snippet.thumbnails.medium.url
+          }));
+          renderHomeGrid(videos);
+        }
+      } catch (err) {
+        console.error("API Fetch Error:", err);
+      }
+    }
+
+    async function handleSearch(e) {
+      e.preventDefault();
+      const query = document.getElementById('search-input').value.trim();
+      if (!query) return;
+
+      if (!STATE.apiKey) {
+        // Fallback filter on mock data
+        const filtered = MOCK_VIDEOS.filter(v => v.title.toLowerCase().includes(query.toLowerCase()));
+        renderHomeGrid(filtered.length ? filtered : MOCK_VIDEOS);
+        navigateTo('home');
+        return;
+      }
+
+      try {
+        const res = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=16&q=${encodeURIComponent(query)}&type=video&key=${STATE.apiKey}`);
+        const data = await res.json();
+        if (data.items) {
+          const videos = data.items.map(item => ({
+            id: item.id.videoId,
+            title: item.snippet.title,
+            channelTitle: item.snippet.channelTitle,
+            views: 'Search Result',
+            publishedAt: new Date(item.snippet.publishedAt).toLocaleDateString(),
+            thumbnail: item.snippet.thumbnails.medium.url
+          }));
+          renderHomeGrid(videos);
+          navigateTo('home');
+        }
+      } catch (err) {
+        console.error("Search API Error:", err);
+      }
+    }
+
+    async function fetchVideoDetails(videoId) {
+      try {
+        const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${videoId}&key=${STATE.apiKey}`);
+        const data = await res.json();
+        if (data.items && data.items.length > 0) {
+          const v = data.items[0];
+          document.getElementById('watch-title').innerText = v.snippet.title;
+          document.getElementById('watch-channel').innerText = v.snippet.channelTitle;
+          document.getElementById('watch-views').innerText = parseInt(v.statistics.viewCount).toLocaleString() + ' views';
+          document.getElementById('watch-date').innerText = new Date(v.snippet.publishedAt).toLocaleDateString();
+          document.getElementById('watch-description').innerText = v.snippet.description;
+          document.getElementById('like-count').innerText = parseInt(v.statistics.likeCount || 0).toLocaleString();
+        }
+      } catch (err) {
+        console.error("Video details fetch error:", err);
+      }
+    }
+
+    async function fetchComments(videoId) {
+      const container = document.getElementById('comments-container');
+      container.innerHTML = `<p class="text-xs text-zinc-500">Loading comments...</p>`;
+      try {
+        const res = await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=10&key=${STATE.apiKey}`);
+        const data = await res.json();
+        container.innerHTML = '';
+        if (data.items && data.items.length > 0) {
+          data.items.forEach(c => {
+            const snippet = c.snippet.topLevelComment.snippet;
+            const div = document.createElement('div');
+            div.className = "flex gap-3 bg-zinc-900/40 p-3 rounded-xl border border-zinc-800/40";
+            div.innerHTML = `
+              <img src="${snippet.authorProfileImageUrl}" class="w-8 h-8 rounded-full" />
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-semibold text-zinc-300">${snippet.authorDisplayName}</span>
+                  <span class="text-[10px] text-zinc-500">${new Date(snippet.publishedAt).toLocaleDateString()}</span>
+                </div>
+                <p class="text-xs text-zinc-300 leading-normal">${snippet.textDisplay}</p>
+              </div>
+            `;
+            container.appendChild(div);
+          });
+        } else {
+          container.innerHTML = `<p class="text-xs text-zinc-500">No comments found.</p>`;
+        }
+      } catch (err) {
+        container.innerHTML = `<p class="text-xs text-zinc-500">Unable to load live comments (Check API Key).</p>`;
+      }
+    }
+
+    // GOOGLE OAUTH SIGN IN
+    function handleAuth() {
+      if (!STATE.clientId) {
+        alert("Please configure your Google OAuth Client ID in Settings first!");
+        openModal('settings-modal');
+        return;
+      }
+
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: STATE.clientId,
+        scope: 'https://www.googleapis.com/auth/youtube.readonly',
+        callback: (response) => {
+          if (response.access_token) {
+            STATE.accessToken = response.access_token;
+            localStorage.setItem('yt_access_token', response.access_token);
+            updateAuthUI(true);
+            loadSubscriptions();
+          }
+        },
+      });
+      client.requestAccessToken();
+    }
+
+    function updateAuthUI(isSignedIn) {
+      const container = document.getElementById('auth-container');
+      if (isSignedIn) {
+        container.innerHTML = `
+          <button onclick="signOut()" class="flex items-center gap-2 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-3 py-1.5 rounded-full tv-focusable">
+            <i class="fa-solid fa-check text-green-400"></i>
+            <span>Connected</span>
+          </button>
+        `;
+      }
+    }
+
+    async function loadSubscriptions() {
+      const grid = document.getElementById('subscriptions-grid');
+      const desc = document.getElementById('sub-status-desc');
+      
+      if (!STATE.accessToken) {
+        grid.innerHTML = `<p class="text-xs text-zinc-500 col-span-full">Sign in to view subscriptions.</p>`;
+        return;
+      }
+
+      try {
+        const res = await fetch(`https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&maxResults=12`, {
+          headers: { Authorization: `Bearer ${STATE.accessToken}` }
+        });
+        const data = await res.json();
+        if (data.items) {
+          desc.innerText = `Showing ${data.items.length} channels from your Google Account`;
+          grid.innerHTML = '';
+          data.items.forEach(sub => {
+            const card = document.createElement('div');
+            card.className = "bg-darkCard p-4 rounded-xl border border-zinc-800 flex items-center gap-3 tv-focusable";
+            card.innerHTML = `
+              <img src="${sub.snippet.thumbnails.default.url}" class="w-10 h-10 rounded-full" />
+              <div class="overflow-hidden">
+                <h4 class="text-xs font-bold text-zinc-200 truncate">${sub.snippet.title}</h4>
+                <p class="text-[10px] text-zinc-500">Subscribed</p>
+              </div>
+            `;
+            grid.appendChild(card);
+          });
+        }
+      } catch (err) {
+        console.error("Sub error:", err);
+      }
+    }
+
+    function signOut() {
+      STATE.accessToken = '';
+      localStorage.removeItem('yt_access_token');
+      location.reload();
+    }
+
+    // MODAL & SETTINGS
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function loadSettingsInputs() {
+      document.getElementById('cfg-api-key').value = STATE.apiKey;
+      document.getElementById('cfg-client-id').value = STATE.clientId;
+      document.getElementById('cfg-player-type').value = STATE.playerType;
+      document.getElementById('cfg-autoplay').checked = STATE.autoplay;
+      document.getElementById('cfg-compact').checked = STATE.compact;
+    }
+
+    function saveSettings() {
+      STATE.apiKey = document.getElementById('cfg-api-key').value.trim();
+      STATE.clientId = document.getElementById('cfg-client-id').value.trim();
+      STATE.playerType = document.getElementById('cfg-player-type').value;
+      STATE.autoplay = document.getElementById('cfg-autoplay').checked;
+      STATE.compact = document.getElementById('cfg-compact').checked;
+
+      localStorage.setItem('yt_api_key', STATE.apiKey);
+      localStorage.setItem('yt_client_id', STATE.clientId);
+      localStorage.setItem('yt_player_type', STATE.playerType);
+      localStorage.setItem('yt_autoplay', STATE.autoplay);
+      localStorage.setItem('yt_compact', STATE.compact);
+
+      closeModal('settings-modal');
+      location.reload();
+    }
+
+    // TV / SPATIAL NAVIGATION
+    function toggleTVMode() {
+      STATE.isTVMode = !STATE.isTVMode;
+      document.body.classList.toggle('tv-mode', STATE.isTVMode);
+      const btn = document.getElementById('tv-mode-btn');
+      btn.classList.toggle('bg-brand', STATE.isTVMode);
+      btn.classList.toggle('text-white', STATE.isTVMode);
+
+      if (STATE.isTVMode) {
+        focusTVElement(0);
+      }
+    }
+
+    function setupTVNavigation() {
+      window.addEventListener('keydown', (e) => {
+        if (!STATE.isTVMode) return;
+
+        const focusables = Array.from(document.querySelectorAll('.tv-focusable:not(.hidden)'));
+        if (!focusables.length) return;
+
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+          e.preventDefault();
+          if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+            STATE.tvFocusedIndex = (STATE.tvFocusedIndex + 1) % focusables.length;
+          } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+            STATE.tvFocusedIndex = (STATE.tvFocusedIndex - 1 + focusables.length) % focusables.length;
+          }
+          focusTVElement(STATE.tvFocusedIndex);
+        } else if (e.key === 'Enter') {
+          const active = focusables[STATE.tvFocusedIndex];
+          if (active) active.click();
+        }
+      });
+    }
+
+    function focusTVElement(index) {
+      const focusables = Array.from(document.querySelectorAll('.tv-focusable:not(.hidden)'));
+      focusables.forEach(el => el.classList.remove('tv-focused'));
+      if (focusables[index]) {
+        focusables[index].classList.add('tv-focused');
+        focusables[index].focus();
+      }
+    }
+
+    // ENGAGEMENT HELPERS
+    function toggleLike() {
+      const icon = document.getElementById('like-icon');
+      icon.classList.toggle('fa-solid');
+      icon.classList.toggle('text-brand');
+    }
+
+    function toggleDislike() {
+      const icon = document.getElementById('dislike-icon');
+      icon.classList.toggle('fa-solid');
+    }
+
+    function shareVideo() {
+      if (navigator.share) {
+        navigator.share({ title: 'Watch Video', url: window.location.href });
+      } else {
+        navigator.clipboard.writeText(window.location.href);
+        alert('Video link copied to clipboard!');
+      }
+    }
+
+    function filterCategory(cat) {
+      if (cat === 'All') {
+        renderHomeGrid(MOCK_VIDEOS);
+      } else {
+        const filtered = MOCK_VIDEOS.filter(v => v.category === cat);
+        renderHomeGrid(filtered.length ? filtered : MOCK_VIDEOS);
+      }
+    }
+  </script>
+</body>
+</html>
