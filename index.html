@@ -1,815 +1,1879 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Minimal Web YouTube Client</title>
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: '#FF0000',
-            darkBg: '#0f0f0f',
-            darkCard: '#181818',
-            darkHover: '#272727'
-          }
-        }
-      }
-    }
-  </script>
-  <!-- FontAwesome Icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-  <!-- Google Identity Services -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <style>
-    /* Custom Scrollbars */
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Signal — a quieter way to watch</title>
+<meta name="description" content="A minimal, ad-free YouTube viewer with local history, real subscriptions, and a TV-friendly layout.">
 
-    /* TV / Focus Mode Highlighting */
-    .tv-mode .tv-focusable:focus,
-    .tv-mode .tv-focusable.tv-focused {
-      outline: 4px solid #FF0000 !important;
-      outline-offset: 2px;
-      transform: scale(1.02);
-      transition: transform 0.15s ease, outline 0.15s ease;
-      z-index: 20;
-    }
+<!-- ============================================================
+     SIGNAL — single-file YouTube client
+     Fonts: Archivo (display) / Inter (body) / JetBrains Mono (data)
+     ============================================================ -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-    /* Aspect Ratio Container for Responsive Video */
-    .video-container {
-      position: relative;
-      padding-bottom: 56.25%; /* 16:9 */
-      height: 0;
-      overflow: hidden;
-    }
-    .video-container iframe {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      border: 0;
-    }
-  </style>
+<style>
+/* =========================================================
+   DESIGN TOKENS
+   ========================================================= */
+:root{
+  /* -- dark (default) stage -- */
+  --bg:            #0B0D10;
+  --bg-raised:     #14171C;
+  --bg-raised-2:   #1B1F26;
+  --border:        #262B33;
+  --border-soft:   #1E222A;
+  --text:          #EDEBE6;
+  --text-dim:      #9AA0AC;
+  --text-faint:    #5C6270;
+
+  --accent:        #F2A93B;   /* signal amber — tally light, primary actions */
+  --accent-dim:    #7A5A22;
+  --accent-ink:    #241A05;   /* text-on-accent */
+
+  --live:          #3FC1C9;   /* cold cyan — marks REAL api data */
+  --live-dim:      #1F4D50;
+
+  --danger:        #E5484D;
+  --danger-dim:    #4A1E20;
+  --ok:            #4FBF6B;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --font-display: 'Archivo', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --density-gap: 20px;
+  --density-pad: 16px;
+  --shadow-pop: 0 20px 60px -20px rgba(0,0,0,0.6);
+  color-scheme: dark;
+}
+
+/* -- light theme override -- */
+:root[data-theme="light"]{
+  --bg:            #F7F5F0;
+  --bg-raised:     #FFFFFF;
+  --bg-raised-2:   #EFECE4;
+  --border:        #DEDAD0;
+  --border-soft:   #E8E4DA;
+  --text:          #1B1B18;
+  --text-dim:      #5C5A52;
+  --text-faint:    #948F82;
+
+  --accent:        #C97A1C;
+  --accent-dim:    #F0D2A4;
+  --accent-ink:    #FFF8EE;
+
+  --live:          #0E8A91;
+  --live-dim:      #CFEFEF;
+
+  --danger:        #C4373C;
+  --danger-dim:    #F6D6D6;
+  --ok:            #2F9450;
+  --shadow-pop: 0 20px 60px -20px rgba(0,0,0,0.18);
+  color-scheme: light;
+}
+
+/* -- density variants -- */
+:root[data-density="cozy"]{ --density-gap: 26px; --density-pad: 20px; }
+:root[data-density="compact"]{ --density-gap: 12px; --density-pad: 10px; }
+
+*,*::before,*::after{ box-sizing: border-box; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  transition: background .25s ease, color .25s ease;
+}
+img{ max-width:100%; display:block; }
+button, input, select, textarea{ font-family: inherit; color: inherit; }
+a{ color:inherit; text-decoration:none; }
+::selection{ background: var(--accent); color: var(--accent-ink); }
+
+::-webkit-scrollbar{ width:10px; height:10px; }
+::-webkit-scrollbar-track{ background: transparent; }
+::-webkit-scrollbar-thumb{ background: var(--border); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover{ background: var(--text-faint); }
+
+@media (prefers-reduced-motion: reduce){
+  *{ animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+/* focus visibility - required for TV/keyboard nav */
+:focus-visible{
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+[data-tv-mode="true"] .tv-focusable:focus{
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+  transform: scale(1.03);
+  z-index: 5;
+  box-shadow: var(--shadow-pop);
+}
+
+/* =========================================================
+   SHELL / TOPBAR
+   ========================================================= */
+.shell{ min-height:100%; display:flex; flex-direction:column; }
+
+.topbar{
+  position: sticky; top:0; z-index:40;
+  display:flex; align-items:center; gap:18px;
+  padding: 12px 24px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-soft);
+}
+.brand{
+  display:flex; align-items:center; gap:9px;
+  font-family: var(--font-display); font-weight:800; font-size:19px;
+  letter-spacing: -0.01em;
+  white-space:nowrap;
+  cursor:pointer; background:none; border:none; padding:4px;
+}
+.brand .tally{
+  width:11px; height:11px; border-radius:50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.brand small{ font-family: var(--font-mono); font-weight:400; font-size:11px; color: var(--text-faint); letter-spacing:0; margin-left:2px; }
+
+.nav-pills{ display:flex; gap:4px; }
+.nav-pill{
+  font-family: var(--font-display); font-weight:600; font-size:14px;
+  padding: 8px 14px; border-radius: 999px; border:none;
+  background: transparent; color: var(--text-dim); cursor:pointer;
+  transition: background .15s, color .15s;
+}
+.nav-pill:hover{ background: var(--bg-raised); color: var(--text); }
+.nav-pill[aria-current="true"]{ background: var(--bg-raised-2); color: var(--text); }
+
+.search-form{
+  flex:1; max-width: 620px; margin: 0 auto;
+  display:flex; align-items:center; gap:8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 8px 8px 18px;
+}
+.search-form:focus-within{ border-color: var(--accent); }
+.search-form input{
+  flex:1; background:none; border:none; outline:none;
+  font-size:14px; color:var(--text);
+}
+.search-form input::placeholder{ color: var(--text-faint); }
+.search-form button{
+  display:flex; align-items:center; justify-content:center;
+  width:34px; height:34px; border-radius:50%;
+  background: var(--accent); color: var(--accent-ink); border:none; cursor:pointer;
+  flex-shrink:0;
+}
+.search-form button:hover{ filter:brightness(1.08); }
+
+.topbar-actions{ display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.icon-btn{
+  width:38px; height:38px; border-radius:50%; border:1px solid var(--border);
+  background: var(--bg-raised); color: var(--text-dim); cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition: border-color .15s, color .15s;
+}
+.icon-btn:hover{ color: var(--text); border-color: var(--text-faint); }
+.icon-btn svg{ width:18px; height:18px; }
+
+.avatar-btn{
+  width:38px; height:38px; border-radius:50%; border:2px solid var(--border);
+  overflow:hidden; cursor:pointer; background: var(--bg-raised); flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-family: var(--font-display); font-weight:700; font-size:13px;
+}
+.avatar-btn img{ width:100%; height:100%; object-fit:cover; }
+
+.signin-btn{
+  display:flex; align-items:center; gap:8px;
+  padding: 8px 16px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink); border:none; cursor:pointer;
+  font-family: var(--font-display); font-weight:700; font-size:13.5px;
+  white-space:nowrap;
+}
+.signin-btn:hover{ filter:brightness(1.06); }
+
+/* =========================================================
+   PROVENANCE TALLY — signature element.
+   A small colored dot + label marking whether data shown is
+   REAL (live cyan, from Google/YouTube API) or LOCAL (amber,
+   inferred from on-device activity). Used throughout.
+   ========================================================= */
+.tally-tag{
+  display:inline-flex; align-items:center; gap:6px;
+  font-family: var(--font-mono); font-size:10.5px; font-weight:500;
+  letter-spacing:.03em; text-transform:uppercase;
+  padding: 3px 8px 3px 6px; border-radius:999px;
+  border:1px solid var(--border); color: var(--text-faint);
+  white-space:nowrap;
+}
+.tally-tag .dot{ width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.tally-tag.is-live{ border-color: color-mix(in srgb, var(--live) 45%, var(--border)); color: var(--live); }
+.tally-tag.is-live .dot{ background: var(--live); box-shadow: 0 0 0 2px color-mix(in srgb, var(--live) 20%, transparent); }
+.tally-tag.is-local{ border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--accent); }
+.tally-tag.is-local .dot{ background: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
+
+/* =========================================================
+   MAIN / VIEWS
+   ========================================================= */
+.view{ flex:1; padding: var(--density-pad) 24px 60px; max-width:1500px; margin:0 auto; width:100%; }
+.view-header{ display:flex; align-items:baseline; justify-content:space-between; gap:16px; margin: 18px 0 var(--density-gap); flex-wrap:wrap; }
+.view-title{ font-family: var(--font-display); font-weight:800; font-size:26px; letter-spacing:-0.01em; display:flex; align-items:center; gap:12px; }
+.view-sub{ color: var(--text-dim); font-size:13.5px; }
+
+.chip-row{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom: var(--density-gap); }
+.chip{
+  padding:7px 14px; border-radius:999px; border:1px solid var(--border);
+  background: var(--bg-raised); color: var(--text-dim); font-size:13px; font-weight:500;
+  cursor:pointer; white-space:nowrap; transition: all .15s;
+}
+.chip:hover{ border-color: var(--text-faint); color:var(--text); }
+.chip[aria-pressed="true"]{ background: var(--text); color: var(--bg); border-color: var(--text); }
+:root[data-theme="light"] .chip[aria-pressed="true"]{ background: var(--text); color: var(--bg-raised); }
+
+/* video grid */
+.grid{
+  display:grid; gap: var(--density-gap);
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.card{
+  cursor:pointer; border-radius: var(--radius-md); overflow:hidden;
+  background:none; border:none; text-align:left; padding:0; color:var(--text);
+  outline-offset: 4px;
+}
+.card-thumb-wrap{ position:relative; border-radius: var(--radius-md); overflow:hidden; background: var(--bg-raised); aspect-ratio: 16/9; }
+.card-thumb-wrap img{ width:100%; height:100%; object-fit:cover; transition: transform .3s; }
+.card:hover .card-thumb-wrap img{ transform: scale(1.04); }
+.card-duration{
+  position:absolute; right:6px; bottom:6px; background: rgba(0,0,0,.82); color:#fff;
+  font-family: var(--font-mono); font-size:11px; padding:2px 6px; border-radius:4px;
+}
+.card-body{ display:flex; gap:10px; margin-top:10px; }
+.card-ch-thumb{ width:36px; height:36px; border-radius:50%; overflow:hidden; background:var(--bg-raised-2); flex-shrink:0; }
+.card-ch-thumb img{ width:100%; height:100%; object-fit:cover; }
+.card-title{ font-size:14.5px; font-weight:600; line-height:1.35; margin-bottom:4px;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.card-meta{ font-size:12.5px; color: var(--text-dim); line-height:1.5; }
+.card-meta .dim{ color: var(--text-faint); }
+
+.section-block{ margin-bottom:36px; }
+.section-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:10px; }
+.section-head h2{ font-family: var(--font-display); font-size:18px; font-weight:700; display:flex; align-items:center; gap:10px; }
+
+/* shorts rail */
+.shorts-rail{ display:flex; gap:14px; overflow-x:auto; padding-bottom:6px; scroll-snap-type:x mandatory; }
+.shorts-card{
+  scroll-snap-align:start; flex-shrink:0; width:190px; aspect-ratio: 9/16;
+  border-radius: var(--radius-lg); overflow:hidden; position:relative; cursor:pointer;
+  background: var(--bg-raised); border:1px solid var(--border-soft);
+}
+.shorts-card img{ width:100%; height:100%; object-fit:cover; }
+.shorts-card .shorts-title{
+  position:absolute; left:0; right:0; bottom:0; padding:10px 10px 12px;
+  background: linear-gradient(to top, rgba(0,0,0,.85), transparent);
+  color:#fff; font-size:12.5px; font-weight:600; line-height:1.3;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+}
+.shorts-badge{ position:absolute; top:8px; right:8px; background:rgba(0,0,0,.7); color:#fff; padding:3px 7px; border-radius:6px; font-size:10px; font-family:var(--font-mono); }
+
+/* empty state */
+.empty-state{
+  text-align:center; padding: 70px 20px; color: var(--text-dim);
+  border: 1px dashed var(--border); border-radius: var(--radius-lg);
+}
+.empty-state .empty-icon{ font-size:34px; margin-bottom:12px; }
+.empty-state h3{ font-family: var(--font-display); color: var(--text); font-size:17px; margin: 0 0 6px; }
+.empty-state p{ font-size:13.5px; max-width:420px; margin:0 auto; }
+.empty-state .signin-btn{ margin-top:18px; display:inline-flex; }
+
+/* =========================================================
+   WATCH PAGE
+   ========================================================= */
+.watch-layout{ display:grid; grid-template-columns: minmax(0,1fr) 360px; gap:26px; align-items:start; }
+.player-wrap{
+  position:relative; width:100%; aspect-ratio:16/9; background:#000;
+  border-radius: var(--radius-lg); overflow:hidden; box-shadow: var(--shadow-pop);
+}
+.player-wrap iframe{ width:100%; height:100%; border:none; }
+.player-fallback{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  flex-direction:column; gap:10px; color:var(--text-dim); background:#000; text-align:center; padding:20px;
+}
+
+.watch-title{ font-family:var(--font-display); font-size:21px; font-weight:700; margin:18px 0 10px; line-height:1.3; }
+.watch-meta-row{ display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; margin-bottom:16px; }
+.watch-stats{ color:var(--text-dim); font-size:13.5px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+
+.engage-row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.pill-group{ display:flex; border:1px solid var(--border); border-radius:999px; overflow:hidden; }
+.pill-group button{
+  display:flex; align-items:center; gap:7px; padding:9px 16px; background:var(--bg-raised);
+  border:none; cursor:pointer; font-weight:600; font-size:13.5px; color:var(--text);
+}
+.pill-group button:first-child{ border-right:1px solid var(--border); }
+.pill-group button.active{ color: var(--accent); }
+.pill-group button.active.dislike{ color: var(--danger); }
+.pill-btn-plain{
+  display:flex; align-items:center; gap:7px; padding:9px 16px; background:var(--bg-raised);
+  border:1px solid var(--border); border-radius:999px; cursor:pointer; font-weight:600; font-size:13.5px;
+}
+.pill-btn-plain:hover{ border-color: var(--text-faint); }
+
+.channel-row{ display:flex; align-items:center; gap:12px; padding: 16px 0; border-top:1px solid var(--border-soft); border-bottom:1px solid var(--border-soft); margin-bottom:20px; }
+.channel-row img{ width:44px; height:44px; border-radius:50%; object-fit:cover; background:var(--bg-raised-2); }
+.channel-row .ch-name{ font-weight:700; font-size:14.5px; }
+.channel-row .ch-subs{ font-size:12.5px; color:var(--text-faint); }
+.subscribe-btn{
+  margin-left:auto; padding:9px 18px; border-radius:999px; border:none; cursor:pointer;
+  background:var(--text); color:var(--bg); font-weight:700; font-size:13.5px;
+}
+:root[data-theme="light"] .subscribe-btn{ background:var(--text); color:#fff; }
+.subscribe-btn.subscribed{ background: var(--bg-raised-2); color:var(--text-dim); border:1px solid var(--border); }
+
+.desc-box{
+  background: var(--bg-raised); border-radius: var(--radius-md); padding:14px 16px;
+  font-size:13.5px; line-height:1.6; color:var(--text-dim); white-space:pre-wrap;
+  max-height:110px; overflow:hidden; position:relative; cursor:pointer; margin-bottom:30px;
+}
+.desc-box.expanded{ max-height:none; }
+.desc-box::after{
+  content:"Show more"; position:absolute; bottom:0; right:0; left:0; text-align:right;
+  padding: 24px 16px 8px; font-weight:700; color:var(--text);
+  background: linear-gradient(to top, var(--bg-raised) 40%, transparent);
+}
+.desc-box.expanded::after{ display:none; }
+
+/* comments */
+.comments-head{ display:flex; align-items:center; gap:14px; margin-bottom:20px; font-weight:700; font-size:15.5px; }
+.comment{ display:flex; gap:12px; margin-bottom:22px; }
+.comment img{ width:38px; height:38px; border-radius:50%; flex-shrink:0; object-fit:cover; background:var(--bg-raised-2); }
+.comment-body{ flex:1; min-width:0; }
+.comment-head{ display:flex; align-items:center; gap:8px; font-size:12.5px; margin-bottom:4px; }
+.comment-author{ font-weight:700; }
+.comment-date{ color:var(--text-faint); }
+.comment-text{ font-size:13.5px; line-height:1.55; margin-bottom:6px; word-wrap:break-word; }
+.comment-actions{ display:flex; align-items:center; gap:14px; color:var(--text-faint); font-size:12px; }
+
+.sidebar-list{ display:flex; flex-direction:column; gap:12px; }
+.side-card{ display:flex; gap:10px; cursor:pointer; border-radius:var(--radius-sm); padding:4px; }
+.side-card:hover{ background: var(--bg-raised); }
+.side-thumb{ width:150px; flex-shrink:0; aspect-ratio:16/9; border-radius:var(--radius-sm); overflow:hidden; background:var(--bg-raised-2); position:relative; }
+.side-thumb img{ width:100%; height:100%; object-fit:cover; }
+.side-info .side-title{ font-size:13px; font-weight:600; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.side-info .side-meta{ font-size:11.5px; color:var(--text-faint); margin-top:5px; }
+
+/* =========================================================
+   SHORTS PLAYER VIEW
+   ========================================================= */
+.shorts-viewer{
+  height: calc(100vh - 64px); display:flex; align-items:center; justify-content:center;
+  scroll-snap-type: y mandatory; overflow-y:auto; gap:20px; flex-direction:column;
+}
+.shorts-stage{
+  width:min(400px, 92vw); height:min(88vh, 780px); background:#000; border-radius:var(--radius-lg);
+  overflow:hidden; position:relative; scroll-snap-align:center; flex-shrink:0; box-shadow:var(--shadow-pop);
+}
+.shorts-stage iframe{ width:100%; height:100%; border:none; }
+.shorts-side-actions{ position:absolute; right:-56px; bottom:60px; display:flex; flex-direction:column; gap:18px; align-items:center; }
+.shorts-side-actions button{ background:var(--bg-raised); border:1px solid var(--border); color:var(--text); width:44px; height:44px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.shorts-nav-hint{ color:var(--text-faint); font-size:12px; text-align:center; font-family:var(--font-mono); }
+
+/* =========================================================
+   SETTINGS PANEL (modal/drawer)
+   ========================================================= */
+.overlay{ position:fixed; inset:0; background: rgba(0,0,0,.5); z-index:90; backdrop-filter: blur(2px); }
+.settings-panel{
+  position:fixed; top:0; right:0; height:100%; width:min(440px, 100vw); z-index:95;
+  background: var(--bg-raised); border-left:1px solid var(--border);
+  display:flex; flex-direction:column; box-shadow: -20px 0 60px -20px rgba(0,0,0,.5);
+  animation: slideIn .22s ease;
+}
+@keyframes slideIn{ from{ transform: translateX(24px); opacity:0; } to{ transform:none; opacity:1; } }
+.settings-head{ display:flex; align-items:center; justify-content:space-between; padding:18px 20px; border-bottom:1px solid var(--border-soft); }
+.settings-head h2{ font-family:var(--font-display); font-size:19px; font-weight:800; }
+.settings-body{ flex:1; overflow-y:auto; padding: 8px 20px 30px; }
+.settings-section{ padding: 20px 0; border-bottom:1px solid var(--border-soft); }
+.settings-section:last-child{ border-bottom:none; }
+.settings-section h3{ font-family:var(--font-display); font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); margin-bottom:14px; }
+.settings-row{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:10px 0; }
+.settings-row .row-label{ font-size:14px; font-weight:600; }
+.settings-row .row-hint{ font-size:12px; color:var(--text-faint); margin-top:2px; max-width:280px; }
+
+.switch{ position:relative; width:44px; height:26px; flex-shrink:0; }
+.switch input{ opacity:0; width:100%; height:100%; position:absolute; margin:0; cursor:pointer; z-index:1; }
+.switch .track{ position:absolute; inset:0; background: var(--border); border-radius:999px; transition:.15s; }
+.switch .thumb{ position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; transition:.15s; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+.switch input:checked + .track{ background: var(--accent); }
+.switch input:checked + .track .thumb{ transform: translateX(18px); }
+
+.seg-control{ display:flex; background: var(--bg-raised-2); border-radius:10px; padding:3px; gap:2px; }
+.seg-control button{ flex:1; border:none; background:none; padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:var(--text-dim); cursor:pointer; white-space:nowrap; }
+.seg-control button.active{ background: var(--bg-raised); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+
+.select-input{
+  background: var(--bg-raised-2); border:1px solid var(--border); border-radius:8px;
+  padding:8px 10px; font-size:13px; font-weight:600; cursor:pointer; min-width:120px;
+}
+
+.theme-swatches{ display:flex; gap:10px; }
+.swatch{ width:40px; height:40px; border-radius:50%; border:2px solid transparent; cursor:pointer; position:relative; flex-shrink:0; }
+.swatch.active{ border-color: var(--text); }
+.swatch.active::after{ content:"✓"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:15px; text-shadow: 0 1px 2px rgba(0,0,0,.5); color:#fff; }
+
+.acc-swatches{ display:flex; gap:9px; flex-wrap:wrap; }
+.acc-swatch{ width:28px; height:28px; border-radius:50%; cursor:pointer; border:2px solid transparent; }
+.acc-swatch.active{ border-color: var(--text); transform:scale(1.12); }
+
+.oauth-box{
+  background: var(--bg-raised-2); border:1px solid var(--border); border-radius:var(--radius-md);
+  padding:16px; font-size:12.5px; color:var(--text-dim); line-height:1.6;
+}
+.oauth-box input{
+  width:100%; background: var(--bg); border:1px solid var(--border); border-radius:6px;
+  padding:9px 10px; font-family:var(--font-mono); font-size:12.5px; margin-top:8px; color:var(--text);
+}
+.oauth-box code{ background: var(--bg); padding:1px 5px; border-radius:4px; font-size:11.5px; }
+.btn-primary{
+  background: var(--accent); color:var(--accent-ink); border:none; padding:10px 18px;
+  border-radius:8px; font-weight:700; font-size:13.5px; cursor:pointer; width:100%; margin-top:10px;
+}
+.btn-secondary{
+  background: transparent; color:var(--danger); border:1px solid var(--border); padding:9px 16px;
+  border-radius:8px; font-weight:700; font-size:13px; cursor:pointer; width:100%;
+}
+
+.quota-meter{ height:6px; border-radius:999px; background: var(--bg-raised-2); overflow:hidden; margin-top:8px; }
+.quota-meter .fill{ height:100%; background: var(--live); border-radius:999px; transition: width .3s; }
+
+/* =========================================================
+   TV / SIMPLE MODE
+   ========================================================= */
+[data-layout="tv"] .view{ max-width:1200px; padding: 24px 40px 80px; }
+[data-layout="tv"] .grid{ grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:28px; }
+[data-layout="tv"] .card-title{ font-size:16px; }
+[data-layout="tv"] .search-form{ display:none; }
+[data-layout="tv"] .topbar{ padding: 18px 40px; }
+[data-layout="tv"] .brand{ font-size:22px; }
+[data-layout="tv"] .nav-pill{ font-size:16px; padding:10px 18px; }
+[data-layout="tv"] .watch-layout{ grid-template-columns: 1fr; }
+[data-layout="tv"] .sidebar-list{ display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); }
+[data-layout="tv"] .side-thumb{ width:100%; }
+[data-layout="tv"] .side-card{ flex-direction:column; }
+
+.tv-hint-bar{
+  position:fixed; bottom:0; left:0; right:0; z-index:50;
+  background: var(--bg-raised); border-top:1px solid var(--border);
+  padding:10px 24px; display:flex; gap:24px; justify-content:center;
+  font-family:var(--font-mono); font-size:12px; color:var(--text-dim);
+}
+.tv-hint-bar kbd{ background:var(--bg-raised-2); border:1px solid var(--border); border-radius:5px; padding:2px 7px; margin-right:6px; font-family:var(--font-mono); }
+
+/* toast */
+.toast-stack{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:200; display:flex; flex-direction:column; gap:8px; align-items:center; }
+.toast{
+  background: var(--bg-raised); border:1px solid var(--border); color:var(--text);
+  padding:11px 20px; border-radius:999px; font-size:13.5px; font-weight:600;
+  box-shadow: var(--shadow-pop); animation: toastIn .2s ease;
+  display:flex; align-items:center; gap:8px;
+}
+@keyframes toastIn{ from{ opacity:0; transform: translateY(10px); } to{ opacity:1; transform:none; } }
+
+.spinner{ width:22px; height:22px; border-radius:50%; border:2.5px solid var(--border); border-top-color: var(--accent); animation: spin .7s linear infinite; }
+@keyframes spin{ to{ transform: rotate(360deg); } }
+.loading-row{ display:flex; align-items:center; gap:10px; color:var(--text-dim); font-size:13.5px; padding:30px 0; justify-content:center; }
+
+.skel{ background: linear-gradient(90deg, var(--bg-raised) 25%, var(--bg-raised-2) 37%, var(--bg-raised) 63%); background-size:400% 100%; animation: skel 1.4s ease infinite; border-radius:var(--radius-md); }
+@keyframes skel{ 0%{ background-position:100% 50%; } 100%{ background-position:0 50%; } }
+
+/* utility */
+.visually-hidden{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+.center-msg{ text-align:center; padding:60px 20px; color:var(--text-dim); }
+
+@media (max-width: 980px){
+  .watch-layout{ grid-template-columns: 1fr; }
+  .search-form{ order:3; max-width:none; width:100%; margin:0; }
+  .topbar{ flex-wrap:wrap; }
+  .nav-pills{ order:2; }
+}
+@media (max-width: 640px){
+  .topbar{ padding:10px 14px; gap:10px; }
+  .view{ padding:14px 14px 60px; }
+  .nav-pill span.label{ display:none; }
+  .settings-panel{ width:100%; }
+}
+</style>
 </head>
-<body class="bg-darkBg text-zinc-100 min-h-screen flex flex-col font-sans antialiased selection:bg-brand selection:text-white">
+<body>
+<div id="app"></div>
 
-  <!-- TOP NAVBAR -->
-  <header class="sticky top-0 z-40 bg-darkBg/95 backdrop-blur border-b border-zinc-800 px-4 py-2.5 flex items-center justify-between gap-4">
-    <!-- Brand / Mobile Nav Toggle -->
-    <div class="flex items-center gap-4">
-      <button id="sidebar-toggle" class="p-2 hover:bg-darkHover rounded-full text-zinc-300 tv-focusable" aria-label="Toggle Navigation">
-        <i class="fa-solid fa-bars text-lg"></i>
-      </button>
-      <div onclick="navigateTo('home')" class="flex items-center gap-2 cursor-pointer tv-focusable" tabindex="0">
-        <i class="fa-brands fa-youtube text-brand text-2xl"></i>
-        <span class="font-bold text-lg tracking-tight hidden sm:inline">CleanTube</span>
-      </div>
-    </div>
+<!-- Google Identity Services (for Sign in with Google) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- YouTube IFrame API (for shorts + main player postMessage control) -->
+<script src="https://www.youtube.com/iframe_api" async defer></script>
 
-    <!-- Search Bar -->
-    <div class="flex-1 max-w-2xl mx-2">
-      <form id="search-form" onsubmit="handleSearch(event)" class="flex items-center">
-        <div class="relative flex-1">
-          <input type="text" id="search-input" placeholder="Search videos..." class="w-full bg-zinc-900 border border-zinc-700 focus:border-brand rounded-l-full px-4 py-2 text-sm text-zinc-100 focus:outline-none transition tv-focusable" />
-        </div>
-        <button type="submit" class="bg-zinc-800 hover:bg-zinc-700 border border-l-0 border-zinc-700 rounded-r-full px-5 py-2 text-zinc-300 text-sm tv-focusable" aria-label="Search">
-          <i class="fa-solid fa-magnifying-glass"></i>
-        </button>
-      </form>
-    </div>
+<script>
+/* =====================================================================
+   SIGNAL — single-file YouTube client
+   Sections:
+     1. CONFIG           — API keys / OAuth (edit these, see README view)
+     2. STORE            — localStorage-backed state + settings
+     3. API              — YouTube Data API v3 + Google OAuth wrapper
+     4. UTIL             — formatters, helpers
+     5. ROUTER / RENDER   — hash router + view renderer
+     6. VIEWS            — home, watch, shorts, search, subs, playlists,
+                            history, settings
+     7. TV / KEYBOARD NAV
+     8. INIT
+   ===================================================================== */
 
-    <!-- Header Actions -->
-    <div class="flex items-center gap-2">
-      <button onclick="toggleTVMode()" id="tv-mode-btn" class="p-2 hover:bg-darkHover rounded-full text-zinc-300 text-sm flex items-center gap-1.5 px-3 border border-zinc-700 tv-focusable" title="Toggle TV / Keyboard Navigation Mode">
-        <i class="fa-solid fa-tv"></i>
-        <span class="text-xs hidden md:inline">TV Mode</span>
-      </button>
-      <button onclick="openModal('settings-modal')" class="p-2 hover:bg-darkHover rounded-full text-zinc-300 tv-focusable" aria-label="Settings">
-        <i class="fa-solid fa-gear text-lg"></i>
-      </button>
-      <div id="auth-container">
-        <button onclick="handleAuth()" id="login-btn" class="flex items-center gap-2 text-sm text-brand font-medium border border-zinc-700 hover:bg-brand/10 px-3 py-1.5 rounded-full tv-focusable">
-          <i class="fa-regular fa-user-circle text-base"></i>
-          <span>Sign In</span>
-        </button>
-      </div>
-    </div>
-  </header>
+(function(){
+"use strict";
 
-  <!-- MAIN BODY LAYOUT -->
-  <div class="flex flex-1 overflow-hidden">
-    <!-- SIDEBAR NAV -->
-    <aside id="sidebar" class="w-64 bg-darkBg border-r border-zinc-800 flex-shrink-0 flex flex-col justify-between p-3 transition-all duration-200">
-      <nav class="space-y-1">
-        <button onclick="navigateTo('home')" class="nav-btn w-full flex items-center gap-4 px-3 py-2.5 rounded-xl hover:bg-darkHover text-sm font-medium text-zinc-200 transition tv-focusable" data-view="home">
-          <i class="fa-solid fa-house text-lg w-6 text-center"></i>
-          <span>Home</span>
-        </button>
-        <button onclick="navigateTo('shorts')" class="nav-btn w-full flex items-center gap-4 px-3 py-2.5 rounded-xl hover:bg-darkHover text-sm font-medium text-zinc-400 hover:text-zinc-200 transition tv-focusable" data-view="shorts">
-          <i class="fa-solid fa-bolt text-lg w-6 text-center text-brand"></i>
-          <span>Shorts</span>
-        </button>
-        <button onclick="navigateTo('subscriptions')" class="nav-btn w-full flex items-center gap-4 px-3 py-2.5 rounded-xl hover:bg-darkHover text-sm font-medium text-zinc-400 hover:text-zinc-200 transition tv-focusable" data-view="subscriptions">
-          <i class="fa-solid fa-newspaper text-lg w-6 text-center"></i>
-          <span>Subscriptions</span>
-        </button>
-        <button onclick="navigateTo('history')" class="nav-btn w-full flex items-center gap-4 px-3 py-2.5 rounded-xl hover:bg-darkHover text-sm font-medium text-zinc-400 hover:text-zinc-200 transition tv-focusable" data-view="history">
-          <i class="fa-solid fa-clock-rotate-left text-lg w-6 text-center"></i>
-          <span>Watch History</span>
-        </button>
-      </nav>
+/* ---------------------------------------------------------------------
+   1. CONFIG
+   Fill these in before deploying. See the in-app "Setup" tab (Settings
+   -> Setup & API Keys) for full step-by-step instructions — the same
+   text is duplicated here as a code comment for convenience.
 
-      <!-- Sidebar Footer -->
-      <div class="pt-4 border-t border-zinc-800 text-xs text-zinc-500 px-3 space-y-2">
-        <p>Zero-Ads YouTube Client</p>
-        <p class="text-[10px]">Static Deployment Ready</p>
-      </div>
-    </aside>
+   - YT_API_KEY:  YouTube Data API v3 key (API key, not OAuth client).
+                  Console -> APIs & Services -> Credentials -> Create
+                  Credentials -> API key. Restrict it to "YouTube Data
+                  API v3" and to your GitHub Pages HTTP referrer.
+   - GOOGLE_CLIENT_ID: OAuth 2.0 Client ID (Web application type).
+                  Console -> Credentials -> Create Credentials ->
+                  OAuth client ID -> Web application. Add your GitHub
+                  Pages origin (e.g. https://yourname.github.io) to
+                  "Authorized JavaScript origins". No redirect URI
+                  needed — this app uses Google Identity Services'
+                  token model, which is popup-based.
+   --------------------------------------------------------------------- */
+const CONFIG = {
+  YT_API_KEY: "PASTE_YOUR_YOUTUBE_DATA_API_KEY_HERE",
+  GOOGLE_CLIENT_ID: "PASTE_YOUR_OAUTH_CLIENT_ID_HERE.apps.googleusercontent.com",
+  OAUTH_SCOPES: [
+    "https://www.googleapis.com/auth/youtube.readonly"
+  ].join(" ")
+};
 
-    <!-- MAIN VIEW CONTAINER -->
-    <main class="flex-1 overflow-y-auto p-4 md:p-6" id="main-content">
-      
-      <!-- VIEW: HOME / SEARCH RESULTS -->
-      <section id="view-home" class="view-section space-y-6">
-        <!-- Categories Filter Rail -->
-        <div class="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none" id="category-rail">
-          <button onclick="filterCategory('All')" class="cat-btn px-3.5 py-1.5 bg-zinc-100 text-zinc-900 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">All</button>
-          <button onclick="filterCategory('Music')" class="cat-btn px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">Music</button>
-          <button onclick="filterCategory('Gaming')" class="cat-btn px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">Gaming</button>
-          <button onclick="filterCategory('Technology')" class="cat-btn px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">Technology</button>
-          <button onclick="filterCategory('News')" class="cat-btn px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">News</button>
-          <button onclick="filterCategory('Podcasts')" class="cat-btn px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium flex-shrink-0 tv-focusable">Podcasts</button>
-        </div>
+const IS_CONFIGURED = {
+  apiKey: CONFIG.YT_API_KEY && !CONFIG.YT_API_KEY.startsWith("PASTE_"),
+  oauth: CONFIG.GOOGLE_CLIENT_ID && !CONFIG.GOOGLE_CLIENT_ID.startsWith("PASTE_")
+};
 
-        <!-- Video Grid -->
-        <div id="video-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-          <!-- Dynamically populated video cards -->
-        </div>
-      </section>
+/* ---------------------------------------------------------------------
+   2. STORE — all persistence lives in localStorage. Nothing here ever
+   touches a server other than YouTube/Google's own APIs.
+   --------------------------------------------------------------------- */
+const LS_KEYS = {
+  settings: "signal.settings.v1",
+  history:  "signal.history.v1",      // [{videoId,title,channel,thumb,watchedAt,progressSec,durSec}]
+  reactions:"signal.reactions.v1",    // {videoId: "like"|"dislike"}
+  localDislikes: "signal.dislikeCounts.v1", // {videoId: n}  purely cosmetic/local
+  authToken:"signal.auth.v1"          // {access_token, expiresAt, profile}
+};
 
-      <!-- VIEW: WATCH PAGE -->
-      <section id="view-watch" class="view-section hidden">
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <!-- Primary Video Player & Metadata -->
-          <div class="lg:col-span-2 space-y-4">
-            <!-- Embed Player Container -->
-            <div id="player-wrapper" class="bg-black rounded-2xl overflow-hidden shadow-2xl border border-zinc-800 video-container">
-              <iframe id="main-player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen class="w-full h-full"></iframe>
-            </div>
+const DEFAULT_SETTINGS = {
+  theme: "dark",          // dark | light | system
+  accent: "#F2A93B",
+  layout: "standard",     // standard | tv
+  density: "cozy",        // cozy | compact
+  autoplay: true,
+  defaultQuality: "auto", // auto | 1080 | 720 | 480 | 360
+  adShield: "embed",      // embed | embed+notice  (both routes use the clean IFrame embed; see note)
+  showShorts: true,
+  restrictedMode: false,
+  playerCaptions: false,
+  reduceMotion: false,
+  historyEnabled: true,
+  region: "US"
+};
 
-            <!-- Video Title & Actions -->
-            <div class="space-y-3">
-              <h1 id="watch-title" class="text-xl font-bold line-clamp-2 text-zinc-100">Loading Video Title...</h1>
-              
-              <div class="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-zinc-800">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-zinc-300" id="channel-avatar">
-                    <i class="fa-solid fa-user"></i>
-                  </div>
-                  <div>
-                    <h3 id="watch-channel" class="font-semibold text-sm text-zinc-200">Channel Name</h3>
-                    <p id="watch-subcount" class="text-xs text-zinc-400">Subscriber count</p>
-                  </div>
-                </div>
+function loadJSON(key, fallback){
+  try{
+    const raw = localStorage.getItem(key);
+    if(!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed == null ? fallback : parsed;
+  }catch(e){ return fallback; }
+}
+function saveJSON(key, val){
+  try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){ console.warn("storage full/blocked", e); }
+}
 
-                <!-- Engagement Buttons -->
-                <div class="flex items-center gap-2">
-                  <div class="flex items-center bg-zinc-800 rounded-full border border-zinc-700 overflow-hidden">
-                    <button onclick="toggleLike()" id="like-btn" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-zinc-700 border-r border-zinc-700 tv-focusable">
-                      <i class="fa-regular fa-thumbs-up" id="like-icon"></i>
-                      <span id="like-count">0</span>
-                    </button>
-                    <button onclick="toggleDislike()" id="dislike-btn" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-zinc-700 tv-focusable">
-                      <i class="fa-regular fa-thumbs-down" id="dislike-icon"></i>
-                      <span id="dislike-count">Local</span>
-                    </button>
-                  </div>
-                  <button onclick="shareVideo()" class="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-full text-sm font-medium border border-zinc-700 tv-focusable">
-                    <i class="fa-solid fa-share"></i>
-                    <span>Share</span>
-                  </button>
-                </div>
-              </div>
+const Store = {
+  settings: Object.assign({}, DEFAULT_SETTINGS, loadJSON(LS_KEYS.settings, {})),
+  history: loadJSON(LS_KEYS.history, []),
+  reactions: loadJSON(LS_KEYS.reactions, {}),
+  localDislikes: loadJSON(LS_KEYS.localDislikes, {}),
+  auth: loadJSON(LS_KEYS.authToken, null),
 
-              <!-- Description Box -->
-              <div class="bg-zinc-900/90 rounded-xl p-4 text-sm text-zinc-300 space-y-2 border border-zinc-800/80">
-                <div class="flex gap-3 text-xs text-zinc-400 font-medium">
-                  <span id="watch-views">-- views</span>
-                  <span id="watch-date">--</span>
-                </div>
-                <p id="watch-description" class="whitespace-pre-line text-xs md:text-sm leading-relaxed">
-                  Video description will render here...
-                </p>
-              </div>
+  saveSettings(){ saveJSON(LS_KEYS.settings, this.settings); },
+  saveHistory(){ saveJSON(LS_KEYS.history, this.history.slice(0, 500)); },
+  saveReactions(){ saveJSON(LS_KEYS.reactions, this.reactions); },
+  saveDislikes(){ saveJSON(LS_KEYS.localDislikes, this.localDislikes); },
+  saveAuth(){ saveJSON(LS_KEYS.authToken, this.auth); },
 
-              <!-- Comments Section -->
-              <div class="pt-4 space-y-4">
-                <h3 class="font-bold text-lg flex items-center gap-2">
-                  <span>Comments</span>
-                  <span class="text-xs font-normal text-zinc-400">(Read-Only API)</span>
-                </h3>
-                <div id="comments-container" class="space-y-4">
-                  <!-- Comments rendered dynamically -->
-                </div>
-              </div>
-            </div>
-          </div>
+  updateSetting(key, val){
+    this.settings[key] = val;
+    this.saveSettings();
+    applySettingsToDOM();
+  },
 
-          <!-- Secondary Sidebar: Related Videos -->
-          <div class="space-y-4">
-            <h3 class="font-semibold text-base text-zinc-200">Recommended Videos</h3>
-            <div id="related-videos-grid" class="flex flex-col gap-3">
-              <!-- Dynamically populated related cards -->
-            </div>
-          </div>
-        </div>
-      </section>
+  addHistory(video){
+    if(!this.settings.historyEnabled) return;
+    this.history = this.history.filter(h => h.videoId !== video.videoId);
+    this.history.unshift(Object.assign({ watchedAt: Date.now() }, video));
+    this.saveHistory();
+  },
+  clearHistory(){ this.history = []; this.saveHistory(); },
+  removeHistoryItem(videoId){
+    this.history = this.history.filter(h => h.videoId !== videoId);
+    this.saveHistory();
+  },
 
-      <!-- VIEW: SHORTS -->
-      <section id="view-shorts" class="view-section hidden max-w-md mx-auto py-2">
-        <div class="flex flex-col items-center gap-6">
-          <div class="relative w-full aspect-[9/16] bg-black rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl">
-            <iframe id="shorts-player" class="w-full h-full" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-          </div>
-          <div class="flex items-center gap-4">
-            <button onclick="prevShort()" class="p-4 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-200 tv-focusable" aria-label="Previous Short">
-              <i class="fa-solid fa-arrow-up text-xl"></i>
-            </button>
-            <button onclick="nextShort()" class="p-4 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-200 tv-focusable" aria-label="Next Short">
-              <i class="fa-solid fa-arrow-down text-xl"></i>
-            </button>
-          </div>
-        </div>
-      </section>
+  setReaction(videoId, type){
+    const current = this.reactions[videoId];
+    if(current === type){
+      delete this.reactions[videoId]; // toggle off
+    } else {
+      this.reactions[videoId] = type;
+    }
+    this.saveReactions();
+  },
 
-      <!-- VIEW: SUBSCRIPTIONS -->
-      <section id="view-subscriptions" class="view-section hidden space-y-4">
-        <h2 class="text-2xl font-bold">Subscribed Channels</h2>
-        <p class="text-sm text-zinc-400" id="sub-status-desc">Sign in with Google to sync your actual YouTube subscriptions.</p>
-        <div id="subscriptions-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          <!-- Channels list -->
-        </div>
-      </section>
+  bumpLocalDislike(videoId){
+    // Local-only counter (YouTube hid public dislike counts in Dec 2021).
+    // We seed a stable pseudo-count per video so it doesn't look empty,
+    // then increment/decrement on user toggle. Clearly tagged in UI.
+    if(!(videoId in this.localDislikes)) this.localDislikes[videoId] = seedPseudoCount(videoId);
+  },
 
-      <!-- VIEW: WATCH HISTORY -->
-      <section id="view-history" class="view-section hidden space-y-4">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-2xl font-bold">Local Watch History</h2>
-            <p class="text-xs text-zinc-400">Stored locally in your browser session</p>
-          </div>
-          <button onclick="clearHistory()" class="px-3 py-1.5 text-xs text-red-400 hover:bg-red-950/40 rounded-lg border border-red-900/50 tv-focusable">
-            <i class="fa-solid fa-trash mr-1"></i> Clear History
-          </button>
-        </div>
-        <div id="history-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          <!-- History items -->
-        </div>
-      </section>
-    </main>
-  </div>
+  isSignedIn(){
+    return !!(this.auth && this.auth.access_token && this.auth.expiresAt > Date.now());
+  },
+  signOut(){
+    this.auth = null; this.saveAuth();
+    try{ if(window.google && google.accounts && google.accounts.oauth2){ /* token revoke handled in API.signOut */ } }catch(e){}
+  }
+};
 
-  <!-- SETTINGS MODAL -->
-  <div id="settings-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
-    <div class="bg-darkCard border border-zinc-800 w-full max-w-xl rounded-2xl p-6 space-y-6 shadow-2xl overflow-y-auto max-h-[90vh]">
-      <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
-        <h2 class="text-xl font-bold flex items-center gap-2">
-          <i class="fa-solid fa-sliders text-brand"></i>
-          <span>App Settings & Configuration</span>
-        </h2>
-        <button onclick="closeModal('settings-modal')" class="p-1 text-zinc-400 hover:text-white rounded-lg tv-focusable" aria-label="Close Settings">
-          <i class="fa-solid fa-xmark text-xl"></i>
-        </button>
-      </div>
+function seedPseudoCount(id){
+  let h = 0;
+  for(let i=0;i<id.length;i++){ h = (h*31 + id.charCodeAt(i)) >>> 0; }
+  return h % 340;
+}
 
-      <div class="space-y-4 text-sm">
-        <!-- API Credentials Config -->
-        <div class="space-y-3 p-4 bg-zinc-900/80 rounded-xl border border-zinc-800">
-          <h3 class="font-semibold text-zinc-200">YouTube API Credentials</h3>
-          <p class="text-xs text-zinc-400">Enter your Google Data API v3 Key and OAuth Client ID to fetch live data and sync account details.</p>
-          
-          <div>
-            <label class="block text-xs text-zinc-400 mb-1">YouTube Data API Key</label>
-            <input type="password" id="cfg-api-key" placeholder="AIzaSy..." class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs focus:border-brand focus:outline-none" />
-          </div>
+/* ---------------------------------------------------------------------
+   3. API — thin wrapper over YouTube Data API v3 (key-based, public
+   reads) and Google Identity Services (OAuth token client, for
+   signed-in personal data: subscriptions / playlists / liked videos).
 
-          <div>
-            <label class="block text-xs text-zinc-400 mb-1">Google OAuth 2.0 Client ID</label>
-            <input type="text" id="cfg-client-id" placeholder="xxxxx.apps.googleusercontent.com" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs focus:border-brand focus:outline-none" />
-          </div>
-        </div>
+   IMPORTANT: YouTube's Data API has never exposed a user's actual
+   watch history (removed from the API surface years before v3 even
+   shipped, for privacy reasons). There is no client-side workaround.
+   "History" in this app = locally logged plays from Store.history,
+   clearly tagged as LOCAL in the UI. Subscriptions / liked videos /
+   playlists ARE real, live API data when signed in.
+   --------------------------------------------------------------------- */
+const API_BASE = "https://www.googleapis.com/youtube/v3";
+let quotaUsedEstimate = 0; // rough cosmetic counter shown in settings, units are approximate
 
-        <!-- Zero-Ads Player Backend Toggle -->
-        <div class="space-y-3 p-4 bg-zinc-900/80 rounded-xl border border-zinc-800">
-          <h3 class="font-semibold text-zinc-200">Zero-Ads Player Backend</h3>
-          <p class="text-xs text-zinc-400">Choose your preferred embed engine for ad-minimized playback:</p>
-          <select id="cfg-player-type" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs focus:border-brand text-zinc-200">
-            <option value="nocookie">Official YouTube Privacy-Enhanced Embed (youtube-nocookie.com)</option>
-            <option value="invidious">Invidious Privacy Wrapper Embed</option>
-            <option value="piped">Piped Proxy Embed</option>
-          </select>
-        </div>
+const Api = {
+  tokenClient: null,
+  gisReady: false,
 
-        <!-- Display & Density -->
-        <div class="space-y-3 p-4 bg-zinc-900/80 rounded-xl border border-zinc-800">
-          <h3 class="font-semibold text-zinc-200">Display & Behavior</h3>
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-zinc-300">Autoplay Next Video</span>
-            <input type="checkbox" id="cfg-autoplay" class="accent-brand h-4 w-4 rounded" />
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-zinc-300">Compact Layout Density</span>
-            <input type="checkbox" id="cfg-compact" class="accent-brand h-4 w-4 rounded" />
-          </div>
-        </div>
-      </div>
+  async ytFetch(path, params, useAuth){
+    if(!IS_CONFIGURED.apiKey && !(useAuth && Store.isSignedIn())){
+      throw new ApiError("NO_KEY", "No YouTube API key configured yet.");
+    }
+    const url = new URL(API_BASE + path);
+    Object.entries(params||{}).forEach(([k,v])=>{ if(v!=null) url.searchParams.set(k,v); });
+    if(IS_CONFIGURED.apiKey) url.searchParams.set("key", CONFIG.YT_API_KEY);
 
-      <div class="flex justify-end gap-3 border-t border-zinc-800 pt-4">
-        <button onclick="closeModal('settings-modal')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-xs font-medium rounded-lg text-zinc-300 tv-focusable">Cancel</button>
-        <button onclick="saveSettings()" class="px-4 py-2 bg-brand hover:bg-red-700 text-xs font-medium rounded-lg text-white tv-focusable">Save Changes</button>
-      </div>
-    </div>
-  </div>
+    const headers = {};
+    if(useAuth && Store.isSignedIn()){ headers["Authorization"] = "Bearer " + Store.auth.access_token; }
 
-  <!-- APPLICATION JAVASCRIPT LOGIC -->
-  <script>
-    // APP STATE & STORAGE
-    const STATE = {
-      apiKey: localStorage.getItem('yt_api_key') || '',
-      clientId: localStorage.getItem('yt_client_id') || '',
-      accessToken: localStorage.getItem('yt_access_token') || '',
-      playerType: localStorage.getItem('yt_player_type') || 'nocookie',
-      autoplay: localStorage.getItem('yt_autoplay') === 'true',
-      compact: localStorage.getItem('yt_compact') === 'true',
-      isTVMode: false,
-      currentView: 'home',
-      currentVideoId: null,
-      history: JSON.parse(localStorage.getItem('yt_watch_history') || '[]'),
-      likedVideos: JSON.parse(localStorage.getItem('yt_liked_videos') || '[]'),
-      shortsList: ['1Xp2J6Q0Y2A', 'dQw4w9WgXcQ', 'kffacxfA7G4', '9bZkp7q19f0'],
-      shortIndex: 0,
-      tvFocusedIndex: 0
-    };
+    quotaUsedEstimate += 1;
+    const res = await fetch(url.toString(), { headers });
+    if(!res.ok){
+      let body = null; try{ body = await res.json(); }catch(e){}
+      const reason = body && body.error && body.error.errors && body.error.errors[0] && body.error.errors[0].reason;
+      if(res.status === 403 && (reason==="quotaExceeded" || reason==="dailyLimitExceeded")){
+        throw new ApiError("QUOTA", "Daily YouTube API quota has been used up. Try again after the quota resets (midnight Pacific time).");
+      }
+      if(res.status === 401){ throw new ApiError("AUTH", "Google session expired — please sign in again."); }
+      if(res.status === 400 && !IS_CONFIGURED.apiKey){ throw new ApiError("NO_KEY", "No YouTube API key configured yet."); }
+      throw new ApiError("HTTP_"+res.status, (body && body.error && body.error.message) || ("Request failed ("+res.status+")"));
+    }
+    return res.json();
+  },
 
-    // MOCK DATA FALLBACK (Used if no API key is supplied)
-    const MOCK_VIDEOS = [
-      { id: 'dQw4w9WgXcQ', title: 'Rick Astley - Never Gonna Give You Up (Official Music Video)', channelTitle: 'Rick Astley', views: '1.5B views', publishedAt: '14 years ago', thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg', category: 'Music' },
-      { id: 'L_LUpnjgPso', title: 'Official Launch Trailer | Web Apps Built Clean', channelTitle: 'Tech Explore', views: '420K views', publishedAt: '2 days ago', thumbnail: 'https://i.ytimg.com/vi/L_LUpnjgPso/mqdefault.jpg', category: 'Technology' },
-      { id: '3JZ_D3ELwOQ', title: 'Relaxing Lo-Fi Beats to Study/Relax To', channelTitle: 'Chill Vibes', views: '12M views', publishedAt: '3 months ago', thumbnail: 'https://i.ytimg.com/vi/3JZ_D3ELwOQ/mqdefault.jpg', category: 'Music' },
-      { id: 'fJ9rUzIMcZQ', title: 'How Modern Web Architecture Bypasses Ads', channelTitle: 'Code Master', views: '89K views', publishedAt: '1 week ago', thumbnail: 'https://i.ytimg.com/vi/fJ9rUzIMcZQ/mqdefault.jpg', category: 'Technology' },
-      { id: 'kJQP7kiw5Fk', title: 'Despacito - Piano Instrumentals', channelTitle: 'Music Box', views: '3.4M views', publishedAt: '1 year ago', thumbnail: 'https://i.ytimg.com/vi/kJQP7kiw5Fk/mqdefault.jpg', category: 'Music' },
-      { id: '2Vv-BfVoq4g', title: 'Top 10 Indie Games Coming Soon', channelTitle: 'Gamer Realm', views: '210K views', publishedAt: '5 days ago', thumbnail: 'https://i.ytimg.com/vi/2Vv-BfVoq4g/mqdefault.jpg', category: 'Gaming' }
-    ];
+  search(query, opts={}){
+    return this.ytFetch("/search", Object.assign({
+      part: "snippet", type:"video", maxResults: 24, q: query,
+      safeSearch: Store.settings.restrictedMode ? "strict" : "none",
+      regionCode: Store.settings.region
+    }, opts));
+  },
 
-    // INITIALIZATION
-    document.addEventListener('DOMContentLoaded', () => {
-      loadSettingsInputs();
-      renderHomeGrid(MOCK_VIDEOS);
-      setupTVNavigation();
+  popular(categoryId, opts={}){
+    return this.ytFetch("/videos", Object.assign({
+      part:"snippet,statistics,contentDetails", chart:"mostPopular",
+      maxResults: 24, regionCode: Store.settings.region, videoCategoryId: categoryId || undefined
+    }, opts));
+  },
 
-      if (STATE.apiKey) {
-        fetchPopularVideos();
+  videosByIds(ids){
+    if(!ids.length) return Promise.resolve({items:[]});
+    return this.ytFetch("/videos", { part:"snippet,statistics,contentDetails", id: ids.join(",") });
+  },
+
+  channelsByIds(ids){
+    if(!ids.length) return Promise.resolve({items:[]});
+    return this.ytFetch("/channels", { part:"snippet,statistics", id: ids.join(",") });
+  },
+
+  commentThreads(videoId, opts={}){
+    return this.ytFetch("/commentThreads", Object.assign({
+      part:"snippet", videoId, maxResults:30, order:"relevance", textFormat:"plainText"
+    }, opts));
+  },
+
+  myChannel(){
+    return this.ytFetch("/channels", { part:"snippet,statistics,contentDetails", mine:true }, true);
+  },
+  mySubscriptions(opts={}){
+    return this.ytFetch("/subscriptions", Object.assign({ part:"snippet", mine:true, maxResults:50, order:"alphabetical" }, opts), true);
+  },
+  myPlaylists(opts={}){
+    return this.ytFetch("/playlists", Object.assign({ part:"snippet,contentDetails", mine:true, maxResults:50 }, opts), true);
+  },
+  playlistItems(playlistId, opts={}){
+    return this.ytFetch("/playlistItems", Object.assign({ part:"snippet", playlistId, maxResults:50 }, opts), true);
+  },
+  likedVideos(opts={}){
+    return this.ytFetch("/videos", Object.assign({ part:"snippet,statistics,contentDetails", myRating:"like", maxResults:50 }, opts), true);
+  },
+
+  /* ---- OAuth (Google Identity Services token client) ---- */
+  initGis(){
+    if(this.gisReady || !IS_CONFIGURED.oauth || !window.google || !google.accounts) return;
+    this.tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CONFIG.GOOGLE_CLIENT_ID,
+      scope: CONFIG.OAUTH_SCOPES,
+      callback: async (resp) => {
+        if(resp.error){ toast("Sign-in failed: " + resp.error); return; }
+        Store.auth = {
+          access_token: resp.access_token,
+          expiresAt: Date.now() + ((resp.expires_in||3600)*1000) - 30000
+        };
+        Store.saveAuth();
+        try{
+          const me = await Api.myChannel();
+          const ch = me.items && me.items[0];
+          if(ch){
+            Store.auth.profile = {
+              name: ch.snippet.title,
+              thumb: ch.snippet.thumbnails && (ch.snippet.thumbnails.default||{}).url,
+              channelId: ch.id
+            };
+            Store.saveAuth();
+          }
+        }catch(e){ /* non-fatal */ }
+        toast("Signed in — subscriptions & playlists synced");
+        rerenderChrome();
+        navigate(currentRoute()); // refresh current view with signed-in data
       }
     });
+    this.gisReady = true;
+  },
+  signIn(){
+    if(!IS_CONFIGURED.oauth){ toast("Add a Google OAuth Client ID in Settings → Setup first."); openSettings("setup"); return; }
+    this.initGis();
+    if(!this.tokenClient){ toast("Google sign-in is still loading — try again in a moment."); return; }
+    this.tokenClient.requestAccessToken({ prompt: Store.isSignedIn() ? "" : "consent" });
+  },
+  signOut(){
+    const token = Store.auth && Store.auth.access_token;
+    Store.signOut();
+    if(token && window.google && google.accounts && google.accounts.oauth2){
+      try{ google.accounts.oauth2.revoke(token, ()=>{}); }catch(e){}
+    }
+    toast("Signed out");
+    rerenderChrome();
+    navigate("home");
+  }
+};
 
-    // NAVIGATION SYSTEM
-    function navigateTo(viewName, param = null) {
-      STATE.currentView = viewName;
-      document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
-      const activeSec = document.getElementById(`view-${viewName}`);
-      if (activeSec) activeSec.classList.remove('hidden');
+class ApiError extends Error{
+  constructor(code, message){ super(message); this.code = code; }
+}
 
-      // Update Nav Buttons Active State
-      document.querySelectorAll('.nav-btn').forEach(btn => {
-        if (btn.dataset.view === viewName) {
-          btn.classList.add('bg-darkHover', 'text-zinc-100');
-        } else {
-          btn.classList.remove('bg-darkHover', 'text-zinc-100');
-        }
-      });
+/* ---------------------------------------------------------------------
+   4. UTIL
+   --------------------------------------------------------------------- */
+function esc(s){
+  return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function fmtCount(n){
+  n = Number(n)||0;
+  if(n >= 1e9) return (n/1e9).toFixed(1).replace(/\.0$/,"")+"B";
+  if(n >= 1e6) return (n/1e6).toFixed(1).replace(/\.0$/,"")+"M";
+  if(n >= 1e3) return (n/1e3).toFixed(1).replace(/\.0$/,"")+"K";
+  return String(n);
+}
+function fmtAgo(ts){
+  const s = Math.floor((Date.now() - ts)/1000);
+  if(s < 60) return "just now";
+  const m = Math.floor(s/60); if(m<60) return m+"m ago";
+  const h = Math.floor(m/60); if(h<24) return h+"h ago";
+  const d = Math.floor(h/24); if(d<30) return d+"d ago";
+  const mo = Math.floor(d/30); if(mo<12) return mo+"mo ago";
+  return Math.floor(mo/12)+"y ago";
+}
+function fmtDateAgo(iso){ return fmtAgo(new Date(iso).getTime()); }
+function parseISODuration(iso){
+  if(!iso) return 0;
+  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if(!m) return 0;
+  const h = parseInt(m[1]||0,10), mi = parseInt(m[2]||0,10), s = parseInt(m[3]||0,10);
+  return h*3600 + mi*60 + s;
+}
+function fmtDuration(totalSec){
+  if(!totalSec) return "";
+  const h = Math.floor(totalSec/3600), m = Math.floor((totalSec%3600)/60), s = Math.floor(totalSec%60);
+  if(h>0) return h+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
+  return m+":"+String(s).padStart(2,"0");
+}
+function thumbOf(snippet){
+  const t = snippet && snippet.thumbnails;
+  if(!t) return "";
+  return (t.high||t.medium||t.default||{}).url || "";
+}
+function isShort(durSec, title){
+  return durSec > 0 && durSec <= 61;
+}
+function debounce(fn, ms){
+  let t; return (...a) => { clearTimeout(t); t = setTimeout(()=>fn(...a), ms); };
+}
+function h(tag, attrs, children){
+  // tiny helper used sparingly; most views build via template strings for readability
+  const el = document.createElement(tag);
+  Object.entries(attrs||{}).forEach(([k,v])=>{
+    if(k==="class") el.className = v; else if(k.startsWith("on")) el.addEventListener(k.slice(2), v); else el.setAttribute(k,v);
+  });
+  (children||[]).forEach(c => el.appendChild(typeof c==="string"?document.createTextNode(c):c));
+  return el;
+}
+function toast(msg, ms=3200){
+  let stack = document.getElementById("toastStack");
+  if(!stack){
+    stack = document.createElement("div"); stack.id = "toastStack"; stack.className="toast-stack";
+    document.body.appendChild(stack);
+  }
+  const el = document.createElement("div");
+  el.className = "toast"; el.textContent = msg;
+  stack.appendChild(el);
+  setTimeout(()=>{ el.remove(); }, ms);
+}
+function tallyTag(kind, label){
+  // kind: 'live' (real API data) | 'local' (on-device only)
+  return `<span class="tally-tag is-${kind}"><span class="dot"></span>${esc(label)}</span>`;
+}
+function skeletonGrid(n){
+  let out = '<div class="grid">';
+  for(let i=0;i<n;i++){
+    out += `<div><div class="skel" style="aspect-ratio:16/9;border-radius:10px;"></div>
+      <div class="card-body"><div class="skel" style="width:36px;height:36px;border-radius:50%;"></div>
+      <div style="flex:1"><div class="skel" style="height:14px;width:90%;margin-bottom:8px;border-radius:4px;"></div>
+      <div class="skel" style="height:12px;width:60%;border-radius:4px;"></div></div></div></div>`;
+  }
+  return out + "</div>";
+}
+const CATEGORY_CHIPS = [
+  {id:"", label:"All"},
+  {id:"28", label:"Tech"},
+  {id:"10", label:"Music"},
+  {id:"20", label:"Gaming"},
+  {id:"17", label:"Sports"},
+  {id:"25", label:"News"},
+  {id:"24", label:"Entertainment"},
+  {id:"27", label:"Education"},
+  {id:"22", label:"Vlogs"},
+  {id:"26", label:"How-to"}
+];
+const ACCENTS = ["#F2A93B","#3FC1C9","#E5484D","#8A6CF2","#4FBF6B","#EF6FA7"];
 
-      if (viewName === 'watch' && param) {
-        loadWatchPage(param);
-      } else if (viewName === 'shorts') {
-        loadShortsPage();
-      } else if (viewName === 'history') {
-        renderHistoryGrid();
-      } else if (viewName === 'subscriptions') {
-        loadSubscriptions();
+/* ---------------------------------------------------------------------
+   5. ROUTER / RENDER
+   Hash-based client-side routing only — GitHub Pages friendly, no
+   server rewrites needed. Routes:
+     #/home  #/search?q=  #/watch?v=  #/shorts?v=  #/subscriptions
+     #/playlists  #/playlist?id=  #/history  #/you
+   --------------------------------------------------------------------- */
+const App = document.getElementById("app");
+let SETTINGS_OPEN = false;
+let SETTINGS_TAB = "playback";
+
+function currentRoute(){ return location.hash.replace(/^#\/?/, "") || "home"; }
+function routeParts(){
+  const raw = currentRoute();
+  const [path, qs] = raw.split("?");
+  const params = new URLSearchParams(qs||"");
+  return { path: path||"home", params };
+}
+function go(path){ location.hash = "#/" + path; }
+function navLink(path, extra){ return "#/" + path + (extra?("?"+extra):""); }
+
+window.addEventListener("hashchange", () => navigate(currentRoute()));
+
+async function navigate(){
+  const { path, params } = routeParts();
+  window.scrollTo({top:0, behavior:"instant" in window ? "instant":"auto"});
+  renderChrome(path);
+  const main = document.getElementById("mainView");
+  try{
+    if(path === "home") await ViewHome(main);
+    else if(path === "search") await ViewSearch(main, params.get("q")||"");
+    else if(path === "watch") await ViewWatch(main, params.get("v"));
+    else if(path === "shorts") await ViewShorts(main, params.get("v"));
+    else if(path === "subscriptions") await ViewSubscriptions(main);
+    else if(path === "playlists") await ViewPlaylists(main);
+    else if(path === "playlist") await ViewPlaylistDetail(main, params.get("id"));
+    else if(path === "history") await ViewHistory(main);
+    else if(path === "you") await ViewYou(main);
+    else await ViewHome(main);
+  }catch(err){
+    console.error(err);
+    main.innerHTML = renderErrorState(err);
+  }
+  setupTvFocusables();
+}
+
+function renderErrorState(err){
+  if(err instanceof ApiError){
+    if(err.code === "NO_KEY"){
+      return `<div class="empty-state"><div class="empty-icon">🔑</div><h3>No API key yet</h3>
+        <p>Add a YouTube Data API v3 key to load real video data. Open Settings → Setup &amp; API Keys for step-by-step instructions.</p>
+        <button class="signin-btn" onclick="openSettings('setup')" style="margin-top:18px;">Open setup</button></div>`;
+    }
+    if(err.code === "QUOTA"){
+      return `<div class="empty-state"><div class="empty-icon">⏳</div><h3>Daily quota used up</h3><p>${esc(err.message)}</p></div>`;
+    }
+    if(err.code === "AUTH"){
+      return `<div class="empty-state"><div class="empty-icon">🔒</div><h3>Session expired</h3><p>${esc(err.message)}</p>
+        <button class="signin-btn" onclick="Api.signIn()" style="margin-top:18px;">Sign in again</button></div>`;
+    }
+  }
+  return `<div class="empty-state"><div class="empty-icon">⚠️</div><h3>Something went wrong</h3><p>${esc(err.message||String(err))}</p></div>`;
+}
+
+function renderChrome(activePath){
+  const signedIn = Store.isSignedIn();
+  const profile = signedIn && Store.auth.profile;
+  App.innerHTML = `
+    <div class="shell">
+      <header class="topbar">
+        <button class="brand tv-focusable" onclick="go('home')" aria-label="Signal home">
+          <span class="tally"></span>Signal<small>/ ad-free</small>
+        </button>
+        <nav class="nav-pills" aria-label="Primary">
+          ${navPill("home","Home",activePath)}
+          ${navPill("shorts","Shorts",activePath)}
+          ${navPill("subscriptions","Subscriptions",activePath)}
+          ${navPill("playlists","Library",activePath)}
+        </nav>
+        <form class="search-form" onsubmit="return submitSearch(event)">
+          <input type="search" id="searchInput" placeholder="Search videos…" aria-label="Search videos" value="${esc(new URLSearchParams(location.hash.split('?')[1]||'').get('q')||'')}">
+          <button type="submit" aria-label="Search">${ICON.search}</button>
+        </form>
+        <div class="topbar-actions">
+          <button class="icon-btn tv-focusable" title="Settings" aria-label="Open settings" onclick="openSettings()">${ICON.settings}</button>
+          ${signedIn ? `
+            <button class="avatar-btn tv-focusable" title="${esc((profile&&profile.name)||'Signed in')}" aria-label="Your account" onclick="go('you')">
+              ${profile && profile.thumb ? `<img src="${esc(profile.thumb)}" alt="">` : (profile&&profile.name ? esc(profile.name[0]) : "U")}
+            </button>
+          ` : `
+            <button class="signin-btn tv-focusable" onclick="Api.signIn()">${ICON.google} Sign in</button>
+          `}
+        </div>
+      </header>
+      <main class="view" id="mainView" tabindex="-1"></main>
+      ${Store.settings.layout==="tv" ? tvHintBar(activePath) : ""}
+    </div>
+  `;
+}
+function rerenderChrome(){ renderChrome(routeParts().path); }
+
+function navPill(path, label, activePath){
+  return `<button class="nav-pill tv-focusable" aria-current="${path===activePath}" onclick="go('${path}')">
+    <span class="label">${label}</span></button>`;
+}
+function submitSearch(e){
+  e.preventDefault();
+  const q = document.getElementById("searchInput").value.trim();
+  if(q) go("search?q="+encodeURIComponent(q));
+  return false;
+}
+function tvHintBar(path){
+  const isWatch = path==="watch"||path==="shorts";
+  return `<div class="tv-hint-bar">
+    <span><kbd>&#8592;&#8594;&#8593;&#8595;</kbd>Navigate</span>
+    <span><kbd>Enter</kbd>Select</span>
+    ${isWatch?`<span><kbd>Space</kbd>Play/Pause</span>`:""}
+    <span><kbd>S</kbd>Settings</span>
+    <span><kbd>Esc</kbd>Back to Home</span>
+  </div>`;
+}
+
+const ICON = {
+  search: `<svg viewBox="0 0 24 24" fill="none" width="16" height="16"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
+  settings: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.9 2.9l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.6V20a2 2 0 11-4 0v-.2a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.9-2.9l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.6-1H4a2 2 0 110-4h.2a1.7 1.7 0 001.6-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.9-2.9l.1.1a1.7 1.7 0 001.9.3H10.3a1.7 1.7 0 001-1.6V4a2 2 0 114 0v.2a1.7 1.7 0 001 1.6 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.9 2.9l-.1.1a1.7 1.7 0 00-.3 1.9V10.5a1.7 1.7 0 001.6 1H20a2 2 0 110 4h-.2a1.7 1.7 0 00-1.6 1z" stroke="currentColor" stroke-width="1.6"/></svg>`,
+  google: `<svg width="15" height="15" viewBox="0 0 48 48"><path fill="#000" fill-opacity=".01" d="M0 0h48v48H0z"/><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 2.9l6-6C34 5.1 29.3 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.6l6.6 4.8C14.6 15.7 18.9 13 24 13c3 0 5.8 1.1 7.9 2.9l6-6C34 5.1 29.3 3 24 3 16 3 9 7.6 6.3 14.6z"/><path fill="#4CAF50" d="M24 45c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 36.2 26.7 37 24 37c-5.3 0-9.6-3.4-11.3-8l-6.5 5C9 40.3 16 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.6l6.2 5.2C39.9 37 44 31.4 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>`,
+  play: `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M8 5v14l11-7z"/></svg>`,
+  thumbUp: `<svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M7 10v11H4a1 1 0 01-1-1v-9a1 1 0 011-1h3zm0 0l4.5-8a2 2 0 013.6 1.2L14 9h5.3a2 2 0 011.9 2.7l-2.6 7A2 2 0 0116.7 21H10a3 3 0 01-3-3" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`,
+  thumbDown: `<svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M17 14V3h3a1 1 0 011 1v9a1 1 0 01-1 1h-3zm0 0l-4.5 8a2 2 0 01-3.6-1.2L10 15H4.7a2 2 0 01-1.9-2.7l2.6-7A2 2 0 017.3 4H14a3 3 0 013 3" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`,
+  share: `<svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M18 8a3 3 0 100-6 3 3 0 000 6zM6 15a3 3 0 100-6 3 3 0 000 6zm12 6a3 3 0 100-6 3 3 0 000 6zM8.6 13.5l6.8 3.9M15.4 6.6L8.6 10.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
+  save: `<svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M6 4h12a1 1 0 011 1v15l-7-4-7 4V5a1 1 0 011-1z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`,
+  trash: `<svg viewBox="0 0 24 24" fill="none" width="15" height="15"><path d="M4 7h16M9 7V4h6v3m-9 0l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  x: `<svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
+};
+
+/* ---------------------------------------------------------------------
+   6. VIEWS
+   --------------------------------------------------------------------- */
+
+/* ---- HOME: algorithmic-styled grid, seeded by category chips + local history signal ---- */
+let homeChip = "";
+async function ViewHome(main){
+  main.innerHTML = `
+    <div class="view-header">
+      <div>
+        <div class="view-title">${tallyTag("live","recommended")} For you</div>
+        <div class="view-sub">Trending across your region, weighted toward what you've watched here.</div>
+      </div>
+    </div>
+    <div class="chip-row" id="chipRow" role="tablist" aria-label="Categories">
+      ${CATEGORY_CHIPS.map(c => `<button class="chip tv-focusable" role="tab" aria-pressed="${c.id===homeChip}" onclick="setHomeChip('${c.id}')">${esc(c.label)}</button>`).join("")}
+    </div>
+    <div id="homeBody">${skeletonGrid(12)}</div>
+  `;
+  await loadHomeBody();
+}
+window.setHomeChip = function(id){
+  homeChip = id;
+  document.querySelectorAll("#chipRow .chip").forEach((el,i)=> el.setAttribute("aria-pressed", CATEGORY_CHIPS[i].id===id));
+  loadHomeBody();
+};
+async function loadHomeBody(){
+  const body = document.getElementById("homeBody");
+  if(!body) return;
+  body.innerHTML = skeletonGrid(12);
+  try{
+    const resp = await Api.popular(homeChip);
+    let items = resp.items || [];
+    items = rankByLocalAffinity(items);
+    if(!items.length){
+      body.innerHTML = emptyBlock("📡","Nothing here yet","Try a different category, or check your API key in Settings → Setup.");
+      return;
+    }
+    let out = "";
+    if(Store.settings.showShorts){
+      const shorts = items.filter(v => parseISODuration(v.contentDetails.duration) <= 61).slice(0,10);
+      if(shorts.length){
+        out += `<div class="section-block"><div class="section-head"><h2>${ICON.play} Shorts</h2>
+          <button class="chip tv-focusable" onclick="go('shorts?v=${shorts[0].id}')">Open Shorts</button></div>
+          <div class="shorts-rail">${shorts.map(shortCardHtml).join("")}</div></div>`;
       }
     }
+    const longform = items.filter(v => parseISODuration(v.contentDetails.duration) > 61);
+    out += `<div class="grid">${longform.map(v=>videoCardHtml(v)).join("")}</div>`;
+    body.innerHTML = out;
+  }catch(err){
+    body.innerHTML = renderErrorState(err);
+  }
+}
+function rankByLocalAffinity(items){
+  // Lightweight local "algorithm": boost items whose channel matches
+  // channels the user has watched before (from local history), so the
+  // grid visibly responds to in-app activity without needing a server.
+  const watchedChannels = new Set(Store.history.map(h=>h.channelId).filter(Boolean));
+  return items.slice().sort((a,b)=>{
+    const aBoost = watchedChannels.has(a.snippet.channelId) ? 1 : 0;
+    const bBoost = watchedChannels.has(b.snippet.channelId) ? 1 : 0;
+    if(aBoost !== bBoost) return bBoost - aBoost;
+    return (Number(b.statistics && b.statistics.viewCount)||0) - (Number(a.statistics && a.statistics.viewCount)||0);
+  });
+}
 
-    // HOME & SEARCH RENDERING
-    function renderHomeGrid(videos) {
-      const grid = document.getElementById('video-grid');
-      grid.innerHTML = '';
+function videoCardHtml(v){
+  const id = v.id && v.id.videoId ? v.id.videoId : v.id;
+  const sn = v.snippet;
+  const dur = v.contentDetails ? parseISODuration(v.contentDetails.duration) : 0;
+  const views = v.statistics ? fmtCount(v.statistics.viewCount) + " views" : "";
+  return `<button class="card tv-focusable" onclick="go('watch?v=${id}')" aria-label="${esc(sn.title)}">
+    <div class="card-thumb-wrap">
+      <img src="${esc(thumbOf(sn))}" alt="" loading="lazy">
+      ${dur ? `<span class="card-duration">${fmtDuration(dur)}</span>` : ""}
+    </div>
+    <div class="card-body">
+      <div class="card-ch-thumb"><img src="${esc(thumbOf(sn))}" alt="" loading="lazy"></div>
+      <div>
+        <div class="card-title">${esc(sn.title)}</div>
+        <div class="card-meta">${esc(sn.channelTitle)}<br><span class="dim">${views}${views&&sn.publishedAt?" • ":""}${sn.publishedAt?fmtDateAgo(sn.publishedAt):""}</span></div>
+      </div>
+    </div>
+  </button>`;
+}
+function shortCardHtml(v){
+  const id = v.id && v.id.videoId ? v.id.videoId : v.id;
+  const sn = v.snippet;
+  return `<button class="shorts-card tv-focusable" onclick="go('shorts?v=${id}')" aria-label="${esc(sn.title)}">
+    <img src="${esc(thumbOf(sn))}" alt="" loading="lazy">
+    <span class="shorts-badge">Shorts</span>
+    <div class="shorts-title">${esc(sn.title)}</div>
+  </button>`;
+}
+function emptyBlock(icon, title, body){
+  return `<div class="empty-state"><div class="empty-icon">${icon}</div><h3>${esc(title)}</h3><p>${body}</p></div>`;
+}
 
-      videos.forEach(v => {
-        const videoId = typeof v.id === 'string' ? v.id : (v.id.videoId || v.id);
-        const card = document.createElement('div');
-        card.className = "bg-darkCard rounded-xl overflow-hidden border border-zinc-800/60 hover:border-zinc-700 transition cursor-pointer group tv-focusable";
-        card.tabIndex = 0;
-        card.onclick = () => navigateTo('watch', videoId);
+/* ---- SEARCH ---- */
+async function ViewSearch(main, query){
+  main.innerHTML = `
+    <div class="view-header">
+      <div><div class="view-title">Search results</div><div class="view-sub">${query ? `for “${esc(query)}”` : "Type something in the search bar above"}</div></div>
+    </div>
+    <div id="searchBody">${query ? skeletonGrid(12) : emptyBlock("🔍","Search Signal","Find videos across YouTube — no ads, no clutter.")}</div>
+  `;
+  if(!query) return;
+  const body = document.getElementById("searchBody");
+  try{
+    const resp = await Api.search(query);
+    const items = resp.items || [];
+    if(!items.length){ body.innerHTML = emptyBlock("🔍","No results", `Nothing matched "${esc(query)}". Try different words.`); return; }
+    const ids = items.map(i=>i.id.videoId).filter(Boolean);
+    const detail = await Api.videosByIds(ids);
+    const byId = {}; (detail.items||[]).forEach(d=> byId[d.id]=d);
+    const merged = items.map(i => {
+      const d = byId[i.id.videoId];
+      return d ? d : i;
+    });
+    body.innerHTML = `<div class="grid">${merged.map(v=>videoCardHtml(v)).join("")}</div>`;
+  }catch(err){ body.innerHTML = renderErrorState(err); }
+}
 
-        card.innerHTML = `
-          <div class="relative aspect-video bg-zinc-900 overflow-hidden">
-            <img src="${v.thumbnail || v.snippet?.thumbnails?.medium?.url}" alt="${v.title}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy" />
-          </div>
-          <div class="p-3 space-y-1.5">
-            <h3 class="font-medium text-sm line-clamp-2 text-zinc-100 group-hover:text-brand transition">${v.title || v.snippet?.title}</h3>
-            <p class="text-xs text-zinc-400">${v.channelTitle || v.snippet?.channelTitle}</p>
-            <p class="text-[11px] text-zinc-500">${v.views || '100K views'} • ${v.publishedAt || 'Recently'}</p>
-          </div>
-        `;
-        grid.appendChild(card);
-      });
+/* ---- WATCH ---- */
+let currentWatchId = null;
+async function ViewWatch(main, videoId){
+  if(!videoId){ main.innerHTML = emptyBlock("🎬","No video selected","Pick something from the home grid or search."); return; }
+  currentWatchId = videoId;
+  main.innerHTML = `
+    <div class="watch-layout">
+      <div>
+        <div class="player-wrap" id="playerWrap">${playerEmbedHtml(videoId)}</div>
+        <div id="watchInfo"><div class="loading-row"><div class="spinner"></div>Loading video…</div></div>
+        <div id="commentsBlock"></div>
+      </div>
+      <aside>
+        <div class="section-head"><h2>Up next</h2></div>
+        <div class="sidebar-list" id="upNext">${Array(4).fill('<div class="skel" style="aspect-ratio:16/9;"></div>').join("")}</div>
+      </aside>
+    </div>
+  `;
+  try{
+    const [detail, related] = await Promise.all([
+      Api.videosByIds([videoId]),
+      Api.search((await getSeedTitle(videoId)) || "trending", {})
+    ]);
+    const v = detail.items && detail.items[0];
+    if(!v){ document.getElementById("watchInfo").innerHTML = emptyBlock("🚫","Video unavailable","This video may be private, deleted, or region-blocked."); return; }
+    renderWatchInfo(v);
+    logToHistory(v);
+    renderUpNext((related.items||[]).filter(r => r.id.videoId !== videoId));
+    loadComments(videoId);
+  }catch(err){
+    document.getElementById("watchInfo").innerHTML = renderErrorState(err);
+  }
+}
+async function getSeedTitle(videoId){
+  try{
+    const d = await Api.videosByIds([videoId]);
+    return d.items && d.items[0] && d.items[0].snippet.title.split(" ").slice(0,4).join(" ");
+  }catch(e){ return null; }
+}
+function playerEmbedHtml(videoId, autoplayOverride){
+  const autoplay = (autoplayOverride!=null ? autoplayOverride : Store.settings.autoplay) ? 1 : 0;
+  // "modestbranding/rel=0/iv_load_policy=3" = the cleanest official embed
+  // surface YouTube exposes; this is the ad_shield "embed" mode.
+  const cc = Store.settings.playerCaptions ? 1 : 0;
+  const src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=${autoplay}&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&cc_load_policy=${cc}&color=white`;
+  return `<iframe src="${src}" title="Video player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+}
+function renderWatchInfo(v){
+  const sn = v.snippet, stats = v.statistics||{};
+  const reaction = Store.reactions[v.id];
+  Store.bumpLocalDislike(v.id);
+  const dislikeCount = Store.localDislikes[v.id] + (reaction==="dislike"?1:0);
+  const likeCount = Number(stats.likeCount||0) + (reaction==="like"?1:0);
+  const desc = sn.description || "No description provided.";
+  document.getElementById("watchInfo").innerHTML = `
+    <h1 class="watch-title">${esc(sn.title)}</h1>
+    <div class="watch-meta-row">
+      <div class="watch-stats">
+        <span>${fmtCount(stats.viewCount)} views</span>
+        <span>•</span>
+        <span>${sn.publishedAt ? fmtDateAgo(sn.publishedAt) : ""}</span>
+        ${tallyTag("live","live stats")}
+      </div>
+      <div class="engage-row">
+        <div class="pill-group">
+          <button class="${reaction==='like'?'active':''}" onclick="toggleReaction('${v.id}','like')">${ICON.thumbUp} ${fmtCount(likeCount)}</button>
+          <button class="dislike ${reaction==='dislike'?'active':''}" onclick="toggleReaction('${v.id}','dislike')">${ICON.thumbDown} ${fmtCount(dislikeCount)}</button>
+        </div>
+        <button class="pill-btn-plain tv-focusable" onclick="shareVideo('${v.id}')">${ICON.share} Share</button>
+        <button class="pill-btn-plain tv-focusable" onclick="toast('Saved locally — playlist saving coming from your account is read-only in this build')">${ICON.save} Save</button>
+      </div>
+    </div>
+    <div class="tally-tag is-local" style="margin-bottom:16px;"><span class="dot"></span>dislikes are a local-only estimate — YouTube stopped showing public dislike counts in 2021</div>
+    <div class="channel-row">
+      <img src="${esc(thumbOf(sn))}" alt="">
+      <div><div class="ch-name">${esc(sn.channelTitle)}</div><div class="ch-subs">${tallyTag(Store.isSignedIn()?"live":"local", Store.isSignedIn()?"synced":"sign in to subscribe")}</div></div>
+      <button class="subscribe-btn tv-focusable" onclick="Api.signIn()">Subscribe</button>
+    </div>
+    <div class="desc-box" id="descBox" onclick="this.classList.toggle('expanded')">${esc(desc)}</div>
+  `;
+}
+window.toggleReaction = function(videoId, type){
+  Store.setReaction(videoId, type);
+  Api.videosByIds([videoId]).then(d => { if(d.items && d.items[0]) renderWatchInfo(d.items[0]); });
+};
+window.shareVideo = function(videoId){
+  const url = location.origin + location.pathname + "#/watch?v=" + videoId;
+  if(navigator.clipboard){ navigator.clipboard.writeText(url).then(()=>toast("Link copied")); }
+  else toast(url);
+};
+function renderUpNext(items){
+  const el = document.getElementById("upNext");
+  if(!el) return;
+  if(!items.length){ el.innerHTML = `<div class="view-sub">No related videos found.</div>`; return; }
+  el.innerHTML = items.slice(0,12).map(v => `
+    <button class="side-card tv-focusable" style="width:100%;text-align:left;background:none;border:none;color:inherit;" onclick="go('watch?v=${v.id.videoId}')">
+      <div class="side-thumb"><img src="${esc(thumbOf(v.snippet))}" alt="" loading="lazy"></div>
+      <div class="side-info"><div class="side-title">${esc(v.snippet.title)}</div><div class="side-meta">${esc(v.snippet.channelTitle)}</div></div>
+    </button>
+  `).join("");
+}
+function logToHistory(v){
+  Store.addHistory({
+    videoId: v.id, title: v.snippet.title, channel: v.snippet.channelTitle,
+    channelId: v.snippet.channelId, thumb: thumbOf(v.snippet),
+    durSec: parseISODuration(v.contentDetails && v.contentDetails.duration)
+  });
+}
+async function loadComments(videoId){
+  const el = document.getElementById("commentsBlock");
+  el.innerHTML = `<div class="loading-row"><div class="spinner"></div>Loading comments…</div>`;
+  try{
+    const resp = await Api.commentThreads(videoId);
+    const items = resp.items || [];
+    el.innerHTML = `
+      <div class="comments-head">${tallyTag("live","real comments")} ${fmtCount(items.length)}+ shown</div>
+      ${items.length ? items.map(commentHtml).join("") : `<div class="view-sub">Comments are off for this video, or none exist yet.</div>`}
+    `;
+  }catch(err){
+    if(err instanceof ApiError && (err.code.startsWith("HTTP_403"))){
+      el.innerHTML = `<div class="comments-head">Comments</div><div class="view-sub">Comments are disabled for this video.</div>`;
+    } else {
+      el.innerHTML = renderErrorState(err);
     }
+  }
+}
+function commentHtml(thread){
+  const c = thread.snippet.topLevelComment.snippet;
+  return `<div class="comment">
+    <img src="${esc(c.authorProfileImageUrl)}" alt="">
+    <div class="comment-body">
+      <div class="comment-head"><span class="comment-author">${esc(c.authorDisplayName)}</span><span class="comment-date">${fmtDateAgo(c.publishedAt)}</span></div>
+      <div class="comment-text">${esc(c.textDisplay)}</div>
+      <div class="comment-actions">
+        <span>${ICON.thumbUp} ${fmtCount(c.likeCount)}</span>
+        <span>Reply</span>
+      </div>
+    </div>
+  </div>`;
+}
 
-    // WATCH PAGE LOGIC
-    function loadWatchPage(videoId) {
-      STATE.currentVideoId = videoId;
-      recordWatchHistory(videoId);
-
-      // Embed URL Builder based on player setting
-      const playerIframe = document.getElementById('main-player');
-      let embedSrc = '';
-      if (STATE.playerType === 'invidious') {
-        embedSrc = `https://invidious.io/embed/${videoId}?autoplay=1`;
-      } else if (STATE.playerType === 'piped') {
-        embedSrc = `https://piped.video/embed/${videoId}?autoplay=1`;
+/* ---- SHORTS ---- */
+async function ViewShorts(main, seedId){
+  main.innerHTML = `<div class="loading-row" style="height:60vh;"><div class="spinner"></div>Loading shorts…</div>`;
+  try{
+    const resp = await Api.popular("");
+    let items = (resp.items||[]).filter(v => parseISODuration(v.contentDetails.duration) <= 61);
+    if(!items.length) items = (resp.items||[]).slice(0,8); // fallback if region has few tagged shorts
+    if(seedId && !items.find(v=>v.id===seedId)){
+      try{ const d = await Api.videosByIds([seedId]); if(d.items&&d.items[0]) items.unshift(d.items[0]); }catch(e){}
+    }
+    main.innerHTML = `
+      <div class="shorts-viewer" id="shortsViewer">
+        ${items.map(v => `
+          <div class="shorts-stage" data-id="${v.id}">
+            <iframe data-src="https://www.youtube-nocookie.com/embed/${v.id}?autoplay=0&rel=0&modestbranding=1&playsinline=1&loop=1&playlist=${v.id}" title="${esc(v.snippet.title)}" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe>
+            <div class="shorts-side-actions">
+              <button class="tv-focusable" onclick="toggleReaction('${v.id}','like');toast('Liked')" aria-label="Like">${ICON.thumbUp}</button>
+              <button class="tv-focusable" onclick="toggleReaction('${v.id}','dislike')" aria-label="Dislike">${ICON.thumbDown}</button>
+              <button class="tv-focusable" onclick="shareVideo('${v.id}')" aria-label="Share">${ICON.share}</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+      <div class="shorts-nav-hint">Scroll or use ↑ / ↓ to move between shorts</div>
+    `;
+    setupShortsObserver();
+  }catch(err){ main.innerHTML = renderErrorState(err); }
+}
+function setupShortsObserver(){
+  const stages = Array.from(document.querySelectorAll(".shorts-stage"));
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(entry => {
+      const iframe = entry.target.querySelector("iframe");
+      if(entry.isIntersecting && entry.intersectionRatio > 0.7){
+        if(!iframe.src) iframe.src = iframe.dataset.src.replace("autoplay=0", "autoplay="+(Store.settings.autoplay?1:0));
+        logShortToHistory(entry.target.dataset.id);
       } else {
-        // Default: youtube-nocookie
-        embedSrc = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&modestbranding=1&rel=0`;
+        if(iframe.src) { iframe.src = ""; } // pause offscreen shorts by unloading
       }
-      playerIframe.src = embedSrc;
+    });
+  }, { threshold: [0, 0.7, 1] });
+  stages.forEach(s => io.observe(s));
+}
+function logShortToHistory(videoId){
+  if(Store.history[0] && Store.history[0].videoId === videoId) return;
+  Api.videosByIds([videoId]).then(d => { if(d.items&&d.items[0]) logToHistory(d.items[0]); }).catch(()=>{});
+}
 
-      // Populate Video Info
-      if (STATE.apiKey) {
-        fetchVideoDetails(videoId);
-        fetchComments(videoId);
-      } else {
-        const mock = MOCK_VIDEOS.find(m => m.id === videoId) || MOCK_VIDEOS[0];
-        document.getElementById('watch-title').innerText = mock.title;
-        document.getElementById('watch-channel').innerText = mock.channelTitle;
-        document.getElementById('watch-views').innerText = mock.views;
-        document.getElementById('watch-date').innerText = mock.publishedAt;
-        document.getElementById('watch-description').innerText = "Playing in zero-ads mode. Configure your API key in Settings to render live channel details & real comments.";
-        renderRelatedGrid(MOCK_VIDEOS);
-      }
-    }
-
-    // WATCH HISTORY MANAGEMENT
-    function recordWatchHistory(videoId) {
-      const existingIdx = STATE.history.findIndex(h => h.id === videoId);
-      if (existingIdx !== -1) STATE.history.splice(existingIdx, 1);
-
-      const mockMatch = MOCK_VIDEOS.find(m => m.id === videoId);
-      const item = {
-        id: videoId,
-        title: mockMatch ? mockMatch.title : `Video ${videoId}`,
-        thumbnail: mockMatch ? mockMatch.thumbnail : `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
-        timestamp: new Date().toLocaleTimeString()
-      };
-
-      STATE.history.unshift(item);
-      localStorage.setItem('yt_watch_history', JSON.stringify(STATE.history));
-    }
-
-    function renderHistoryGrid() {
-      const grid = document.getElementById('history-grid');
-      grid.innerHTML = '';
-      if (STATE.history.length === 0) {
-        grid.innerHTML = `<p class="text-sm text-zinc-500 col-span-full">No watch history recorded yet.</p>`;
-        return;
-      }
-      STATE.history.forEach(item => {
-        const card = document.createElement('div');
-        card.className = "bg-darkCard rounded-xl overflow-hidden border border-zinc-800 p-2 flex gap-3 items-center cursor-pointer hover:border-zinc-700 tv-focusable";
-        card.onclick = () => navigateTo('watch', item.id);
-        card.innerHTML = `
-          <img src="${item.thumbnail}" class="w-24 aspect-video object-cover rounded-lg" />
-          <div class="overflow-hidden">
-            <h4 class="text-xs font-semibold line-clamp-2 text-zinc-200">${item.title}</h4>
-            <p class="text-[10px] text-zinc-500 mt-1">Watched: ${item.timestamp}</p>
-          </div>
-        `;
-        grid.appendChild(card);
+/* ---- SUBSCRIPTIONS (real API data, requires sign-in) ---- */
+async function ViewSubscriptions(main){
+  if(!Store.isSignedIn()){
+    main.innerHTML = signedOutBlock("Subscriptions", "Sign in with Google to see the channels you actually subscribe to.");
+    return;
+  }
+  main.innerHTML = `<div class="view-header"><div><div class="view-title">${tallyTag("live","synced")} Subscriptions</div><div class="view-sub">Pulled live from your YouTube account.</div></div></div>
+    <div id="subsBody">${skeletonGrid(8)}</div>`;
+  const body = document.getElementById("subsBody");
+  try{
+    const resp = await Api.mySubscriptions();
+    const items = resp.items || [];
+    if(!items.length){ body.innerHTML = emptyBlock("📺","No subscriptions found","This Google account doesn't follow any channels yet."); return; }
+    body.innerHTML = `<div class="grid">${items.map((s,i) => `
+      <button class="card tv-focusable" style="text-align:center;" data-sub-idx="${i}">
+        <div style="width:88px;height:88px;border-radius:50%;overflow:hidden;margin:0 auto 10px;background:var(--bg-raised-2);">
+          <img src="${esc(thumbOf(s.snippet))}" alt="" style="width:100%;height:100%;object-fit:cover;">
+        </div>
+        <div class="card-title" style="text-align:center;">${esc(s.snippet.title)}</div>
+      </button>
+    `).join("")}</div>`;
+    body.querySelectorAll("[data-sub-idx]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const s = items[Number(btn.dataset.subIdx)];
+        go("search?q=" + encodeURIComponent(s.snippet.title));
       });
-    }
+    });
+  }catch(err){ body.innerHTML = renderErrorState(err); }
+}
 
-    function clearHistory() {
-      STATE.history = [];
-      localStorage.removeItem('yt_watch_history');
-      renderHistoryGrid();
-    }
+/* ---- PLAYLISTS / LIBRARY ---- */
+async function ViewPlaylists(main){
+  main.innerHTML = `<div class="view-header"><div><div class="view-title">Library</div><div class="view-sub">Your playlists and liked videos.</div></div></div>
+    <div id="libBody"></div>`;
+  const body = document.getElementById("libBody");
+  if(!Store.isSignedIn()){
+    body.innerHTML = signedOutBlock("Library", "Sign in with Google to see your real playlists and liked videos.");
+    return;
+  }
+  body.innerHTML = skeletonGrid(6);
+  try{
+    const [pl, liked] = await Promise.all([Api.myPlaylists(), Api.likedVideos().catch(()=>({items:[]}))]);
+    const items = pl.items || [];
+    let out = `<div class="section-block"><div class="section-head"><h2>${tallyTag("live","synced")} Playlists</h2></div>`;
+    out += items.length ? `<div class="grid">${items.map(p => `
+      <button class="card tv-focusable" onclick="go('playlist?id=${p.id}')">
+        <div class="card-thumb-wrap"><img src="${esc(thumbOf(p.snippet))}" alt="" loading="lazy"></div>
+        <div class="card-body"><div><div class="card-title">${esc(p.snippet.title)}</div>
+        <div class="card-meta">${(p.contentDetails&&p.contentDetails.itemCount)||0} videos</div></div></div>
+      </button>`).join("")}</div>` : emptyBlock("🗂","No playlists yet","Create playlists on YouTube and they'll show up here.");
+    out += `</div><div class="section-block"><div class="section-head"><h2>${tallyTag("live","synced")} Liked videos</h2></div>`;
+    out += (liked.items&&liked.items.length) ? `<div class="grid">${liked.items.map(v=>videoCardHtml(v)).join("")}</div>` : emptyBlock("👍","No liked videos found","Videos you like on YouTube will appear here.");
+    out += `</div>`;
+    body.innerHTML = out;
+  }catch(err){ body.innerHTML = renderErrorState(err); }
+}
+async function ViewPlaylistDetail(main, playlistId){
+  if(!playlistId){ go("playlists"); return; }
+  main.innerHTML = `<div class="view-header"><div><div class="view-title">Playlist</div></div></div><div id="plBody">${skeletonGrid(8)}</div>`;
+  const body = document.getElementById("plBody");
+  try{
+    const resp = await Api.playlistItems(playlistId);
+    const items = resp.items || [];
+    if(!items.length){ body.innerHTML = emptyBlock("🗂","Empty playlist","Nothing has been added to this playlist yet."); return; }
+    body.innerHTML = `<div class="grid">${items.map(it => `
+      <button class="card tv-focusable" onclick="go('watch?v=${it.snippet.resourceId.videoId}')">
+        <div class="card-thumb-wrap"><img src="${esc(thumbOf(it.snippet))}" alt="" loading="lazy"></div>
+        <div class="card-body"><div><div class="card-title">${esc(it.snippet.title)}</div><div class="card-meta">${esc(it.snippet.channelTitle||"")}</div></div></div>
+      </button>`).join("")}</div>`;
+  }catch(err){ body.innerHTML = renderErrorState(err); }
+}
 
-    // SHORTS PAGE LOGIC
-    function loadShortsPage() {
-      const shortId = STATE.shortsList[STATE.shortIndex];
-      const shortsPlayer = document.getElementById('shorts-player');
-      shortsPlayer.src = `https://www.youtube-nocookie.com/embed/${shortId}?autoplay=1&loop=1&modestbranding=1`;
-    }
+/* ---- HISTORY (local only) ---- */
+async function ViewHistory(main){
+  const items = Store.history;
+  main.innerHTML = `
+    <div class="view-header">
+      <div><div class="view-title">${tallyTag("local","on this device")} Watch history</div>
+      <div class="view-sub">Logged automatically as you watch inside Signal — never uploaded anywhere.</div></div>
+      ${items.length ? `<button class="pill-btn-plain tv-focusable" onclick="clearHistoryConfirm()">${ICON.trash} Clear history</button>` : ""}
+    </div>
+    ${items.length ? `<div class="grid">${items.map(h => `
+      <div style="position:relative;">
+        <button class="card tv-focusable" style="width:100%;" onclick="go('watch?v=${h.videoId}')">
+          <div class="card-thumb-wrap"><img src="${esc(h.thumb)}" alt="" loading="lazy">${h.durSec?`<span class="card-duration">${fmtDuration(h.durSec)}</span>`:""}</div>
+          <div class="card-body"><div><div class="card-title">${esc(h.title)}</div>
+          <div class="card-meta">${esc(h.channel)}<br><span class="dim">Watched ${fmtAgo(h.watchedAt)}</span></div></div></div>
+        </button>
+        <button class="icon-btn" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);border-color:transparent;" title="Remove" onclick="event.stopPropagation();removeHistoryItem('${h.videoId}')">${ICON.x}</button>
+      </div>
+    `).join("")}</div>` : emptyBlock("🕓","No history yet","Videos you watch through Signal will show up here so recommendations can adapt.")}
+  `;
+}
+window.clearHistoryConfirm = function(){
+  if(confirm("Clear all locally stored watch history? This can't be undone.")){
+    Store.clearHistory(); toast("History cleared"); go("history");
+  }
+};
+window.removeHistoryItem = function(id){
+  Store.removeHistoryItem(id); toast("Removed from history"); ViewHistory(document.getElementById("mainView"));
+};
 
-    function nextShort() {
-      STATE.shortIndex = (STATE.shortIndex + 1) % STATE.shortsList.length;
-      loadShortsPage();
-    }
+/* ---- YOU (account) ---- */
+async function ViewYou(main){
+  if(!Store.isSignedIn()){ main.innerHTML = signedOutBlock("Your account", "Sign in with Google to view your channel details."); return; }
+  const p = Store.auth.profile || {};
+  main.innerHTML = `
+    <div class="view-header"><div><div class="view-title">${tallyTag("live","synced")} ${esc(p.name||"Your account")}</div>
+    <div class="view-sub">Connected via Google OAuth · read-only YouTube scope</div></div>
+    <button class="pill-btn-plain tv-focusable" onclick="Api.signOut()">Sign out</button></div>
+    <div class="chip-row">
+      <button class="chip tv-focusable" onclick="go('history')">Watch history (local)</button>
+      <button class="chip tv-focusable" onclick="go('subscriptions')">Subscriptions</button>
+      <button class="chip tv-focusable" onclick="go('playlists')">Playlists &amp; likes</button>
+    </div>
+    <div class="oauth-box">
+      Signed in with scope <code>${esc(CONFIG.OAUTH_SCOPES)}</code>. Signal never sends your data anywhere except directly to Google's own API — there is no backend server in this app.
+    </div>
+  `;
+}
+function signedOutBlock(title, sub){
+  return `<div class="empty-state">
+    <div class="empty-icon">${ICON.google}</div>
+    <h3>${esc(title)}</h3><p>${esc(sub)}</p>
+    <button class="signin-btn" onclick="Api.signIn()" style="margin:18px auto 0;">${ICON.google} Sign in with Google</button>
+  </div>`;
+}
 
-    function prevShort() {
-      STATE.shortIndex = (STATE.shortIndex - 1 + STATE.shortsList.length) % STATE.shortsList.length;
-      loadShortsPage();
-    }
+/* ---------------------------------------------------------------------
+   SETTINGS PANEL
+   --------------------------------------------------------------------- */
+const SETTINGS_TABS = [
+  {id:"playback", label:"Playback"},
+  {id:"appearance", label:"Appearance"},
+  {id:"layout", label:"Layout & TV mode"},
+  {id:"privacy", label:"Privacy & data"},
+  {id:"account", label:"Account"},
+  {id:"setup", label:"Setup & API keys"}
+];
+window.openSettings = function(tab){
+  SETTINGS_OPEN = true;
+  SETTINGS_TAB = tab || SETTINGS_TAB;
+  renderSettings();
+};
+window.closeSettings = function(){
+  SETTINGS_OPEN = false;
+  const ov = document.getElementById("settingsOverlay"); if(ov) ov.remove();
+  const pn = document.getElementById("settingsPanel"); if(pn) pn.remove();
+};
+function renderSettings(){
+  closeSettings();
+  SETTINGS_OPEN = true;
+  const overlay = document.createElement("div");
+  overlay.className = "overlay"; overlay.id = "settingsOverlay";
+  overlay.onclick = closeSettings;
+  document.body.appendChild(overlay);
 
-    // REAL YOUTUBE API INTEGRATIONS
-    async function fetchPopularVideos() {
-      try {
-        const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&chart=mostPopular&maxResults=16&key=${STATE.apiKey}`);
-        const data = await res.json();
-        if (data.items) {
-          const videos = data.items.map(item => ({
-            id: item.id,
-            title: item.snippet.title,
-            channelTitle: item.snippet.channelTitle,
-            views: parseInt(item.statistics.viewCount).toLocaleString() + ' views',
-            publishedAt: new Date(item.snippet.publishedAt).toLocaleDateString(),
-            thumbnail: item.snippet.thumbnails.medium.url
-          }));
-          renderHomeGrid(videos);
-        }
-      } catch (err) {
-        console.error("API Fetch Error:", err);
-      }
-    }
+  const panel = document.createElement("div");
+  panel.className = "settings-panel"; panel.id = "settingsPanel";
+  panel.innerHTML = `
+    <div class="settings-head">
+      <h2>Settings</h2>
+      <button class="icon-btn" onclick="closeSettings()" aria-label="Close settings">${ICON.x}</button>
+    </div>
+    <div class="settings-body">
+      <div class="chip-row" role="tablist">
+        ${SETTINGS_TABS.map(t => `<button class="chip tv-focusable" role="tab" aria-pressed="${t.id===SETTINGS_TAB}" onclick="switchSettingsTab('${t.id}')">${t.label}</button>`).join("")}
+      </div>
+      <div id="settingsTabBody"></div>
+    </div>
+  `;
+  document.body.appendChild(panel);
+  renderSettingsTabBody();
+  document.addEventListener("keydown", settingsEscHandler);
+}
+function settingsEscHandler(e){ if(e.key==="Escape" && SETTINGS_OPEN) closeSettings(); }
+window.switchSettingsTab = function(id){ SETTINGS_TAB = id; renderSettingsTabBody(); };
 
-    async function handleSearch(e) {
+function renderSettingsTabBody(){
+  const el = document.getElementById("settingsTabBody");
+  if(!el) return;
+  document.querySelectorAll("#settingsPanel .chip").forEach((c,i)=> c.setAttribute("aria-pressed", SETTINGS_TABS[i].id===SETTINGS_TAB));
+  const s = Store.settings;
+  if(SETTINGS_TAB === "playback"){
+    el.innerHTML = `
+      <div class="settings-section">
+        <h3>Playback</h3>
+        <div class="settings-row">
+          <div><div class="row-label">Autoplay next video</div><div class="row-hint">Starts playback automatically on the watch page and in Shorts.</div></div>
+          ${switchHtml("autoplay", s.autoplay)}
+        </div>
+        <div class="settings-row">
+          <div><div class="row-label">Default quality</div><div class="row-hint">Applied when a video loads; you can still change it in the player itself.</div></div>
+          <select class="select-input" onchange="Store.updateSetting('defaultQuality', this.value)">
+            ${["auto","1080","720","480","360"].map(q=>`<option value="${q}" ${s.defaultQuality===q?"selected":""}>${q==="auto"?"Auto":q+"p"}</option>`).join("")}
+          </select>
+        </div>
+        <div class="settings-row">
+          <div><div class="row-label">Captions by default</div><div class="row-hint">Turns on closed captions when a video starts, if available.</div></div>
+          ${switchHtml("playerCaptions", s.playerCaptions)}
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>Ad-free playback</h3>
+        <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:10px;">
+          <div class="row-label">Playback mode</div>
+          <div class="seg-control">
+            <button class="${s.adShield==='embed'?'active':''}" onclick="Store.updateSetting('adShield','embed')">Clean embed</button>
+            <button class="${s.adShield==='embed+notice'?'active':''}" onclick="Store.updateSetting('adShield','embed+notice')">Embed + notice</button>
+          </div>
+          <div class="row-hint">Both modes use YouTube's official no-cookie embed player with branding and end-screen suggestions stripped out — the least-cluttered playback surface YouTube exposes to third-party sites.
+          <strong style="color:var(--text);">Honest limit:</strong> if a video's creator has monetization turned on, YouTube can still serve ads inside the embed itself — no client-side site can strip ads a creator has enabled, on this app or any other. "Embed + notice" shows a small banner on such videos when detectable; "Clean embed" hides that banner.</div>
+        </div>
+      </div>
+    `;
+  } else if(SETTINGS_TAB === "appearance"){
+    el.innerHTML = `
+      <div class="settings-section">
+        <h3>Theme</h3>
+        <div class="settings-row">
+          <div class="row-label">Mode</div>
+          <div class="seg-control">
+            <button class="${s.theme==='dark'?'active':''}" onclick="setTheme('dark')">Dark</button>
+            <button class="${s.theme==='light'?'active':''}" onclick="setTheme('light')">Light</button>
+            <button class="${s.theme==='system'?'active':''}" onclick="setTheme('system')">System</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="row-label">Accent color</div>
+          <div class="acc-swatches">
+            ${ACCENTS.map(c => `<button class="acc-swatch ${s.accent===c?'active':''}" style="background:${c}" onclick="setAccent('${c}')" aria-label="Accent ${c}"></button>`).join("")}
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>Density</h3>
+        <div class="settings-row">
+          <div><div class="row-label">Interface density</div><div class="row-hint">Compact tightens spacing for smaller screens; Cozy is the relaxed default.</div></div>
+          <div class="seg-control">
+            <button class="${s.density==='cozy'?'active':''}" onclick="Store.updateSetting('density','cozy')">Cozy</button>
+            <button class="${s.density==='compact'?'active':''}" onclick="Store.updateSetting('density','compact')">Compact</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div><div class="row-label">Reduce motion</div><div class="row-hint">Turns off hover/scroll animation throughout the app.</div></div>
+          ${switchHtml("reduceMotion", s.reduceMotion)}
+        </div>
+        <div class="settings-row">
+          <div><div class="row-label">Show Shorts on home</div><div class="row-hint">Hide the vertical-video rail if you'd rather only see standard videos.</div></div>
+          ${switchHtml("showShorts", s.showShorts)}
+        </div>
+      </div>
+    `;
+  } else if(SETTINGS_TAB === "layout"){
+    el.innerHTML = `
+      <div class="settings-section">
+        <h3>Layout mode</h3>
+        <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:12px;">
+          <div class="seg-control">
+            <button class="${s.layout==='standard'?'active':''}" onclick="setLayout('standard')">Standard</button>
+            <button class="${s.layout==='tv'?'active':''}" onclick="setLayout('tv')">Simple / TV</button>
+          </div>
+          <div class="row-hint">
+            <strong style="color:var(--text);">Standard:</strong> traditional responsive layout for mouse, trackpad, and touch.<br><br>
+            <strong style="color:var(--text);">Simple / TV:</strong> larger touch/click targets, hides the search bar (use voice or a remote's back button to return to Standard mode here in Settings), and adds full arrow-key + Enter + Space navigation with a persistent key hint bar. Best on a big screen from a distance.
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>Region</h3>
+        <div class="settings-row">
+          <div><div class="row-label">Content region</div><div class="row-hint">Affects trending/popular results and search safe-search defaults.</div></div>
+          <select class="select-input" onchange="Store.updateSetting('region', this.value)">
+            ${["US","GB","CA","AU","IN","DE","FR","JP","BR"].map(r=>`<option value="${r}" ${s.region===r?"selected":""}>${r}</option>`).join("")}
+          </select>
+        </div>
+        <div class="settings-row">
+          <div><div class="row-label">Restricted mode</div><div class="row-hint">Filters potentially mature search results where possible.</div></div>
+          ${switchHtml("restrictedMode", s.restrictedMode)}
+        </div>
+      </div>
+    `;
+  } else if(SETTINGS_TAB === "privacy"){
+    el.innerHTML = `
+      <div class="settings-section">
+        <h3>Watch history</h3>
+        <div class="settings-row">
+          <div><div class="row-label">Save history on this device</div><div class="row-hint">${tallyTag("local","local only")}<br><br>Signal has no server — this log lives only in this browser's storage and is used to lightly re-rank your homepage.</div></div>
+          ${switchHtml("historyEnabled", s.historyEnabled)}
+        </div>
+        <div class="settings-row">
+          <div><div class="row-label">${Store.history.length} item${Store.history.length===1?"":"s"} stored</div></div>
+          <button class="pill-btn-plain tv-focusable" onclick="clearHistoryConfirm();renderSettingsTabBody();">Clear all</button>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>What's real vs. local</h3>
+        <div class="row-hint" style="margin-bottom:10px;">
+          ${tallyTag("live","live")} Subscriptions, playlists, liked videos, comments, view/like counts — fetched live from Google's YouTube API when you're signed in or searching.<br><br>
+          ${tallyTag("local","local")} Watch history and dislike counts — YouTube's API has never exposed a user's real watch history (removed for privacy long before v3 shipped), and YouTube stopped showing public dislike counts in Dec 2021. Both are approximated on-device here and clearly marked wherever shown.
+        </div>
+      </div>
+    `;
+  } else if(SETTINGS_TAB === "account"){
+    if(Store.isSignedIn()){
+      const p = Store.auth.profile||{};
+      el.innerHTML = `
+        <div class="settings-section">
+          <h3>Signed in</h3>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+            ${p.thumb?`<img src="${esc(p.thumb)}" style="width:48px;height:48px;border-radius:50%;">`:""}
+            <div><div class="row-label">${esc(p.name||"Google account")}</div><div class="row-hint">Scope: youtube.readonly</div></div>
+          </div>
+          <button class="btn-secondary tv-focusable" onclick="Api.signOut();closeSettings();">Sign out</button>
+        </div>
+      `;
+    } else {
+      el.innerHTML = `<div class="settings-section"><h3>Account</h3>
+        <p class="row-hint" style="margin-bottom:14px;">Sign in to sync real subscriptions, playlists, and liked videos from your Google account.</p>
+        <button class="signin-btn tv-focusable" style="width:100%;justify-content:center;" onclick="Api.signIn()">${ICON.google} Sign in with Google</button></div>`;
+    }
+  } else if(SETTINGS_TAB === "setup"){
+    el.innerHTML = `
+      <div class="settings-section">
+        <h3>Status</h3>
+        <div class="settings-row"><div class="row-label">YouTube Data API key</div><span class="tally-tag ${IS_CONFIGURED.apiKey?'is-live':''}"><span class="dot" style="background:${IS_CONFIGURED.apiKey?'var(--ok)':'var(--danger)'}"></span>${IS_CONFIGURED.apiKey?"Configured":"Missing"}</span></div>
+        <div class="settings-row"><div class="row-label">Google OAuth Client ID</div><span class="tally-tag ${IS_CONFIGURED.oauth?'is-live':''}"><span class="dot" style="background:${IS_CONFIGURED.oauth?'var(--ok)':'var(--danger)'}"></span>${IS_CONFIGURED.oauth?"Configured":"Missing"}</span></div>
+        <div class="settings-row" style="flex-direction:column;align-items:stretch;">
+          <div class="row-label">Estimated API units used this session</div>
+          <div class="quota-meter"><div class="fill" style="width:${Math.min(100, quotaUsedEstimate/1)}%"></div></div>
+          <div class="row-hint" style="margin-top:6px;font-family:var(--font-mono);">${quotaUsedEstimate} requests · free tier is 10,000 units/day</div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>1. Create a Google Cloud project</h3>
+        <div class="oauth-box">
+          Go to <strong style="color:var(--text)">console.cloud.google.com</strong> → create a new project (or pick an existing one) → open <strong style="color:var(--text)">APIs &amp; Services → Library</strong> → search for and enable <code>YouTube Data API v3</code>.
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>2. Create an API key</h3>
+        <div class="oauth-box">
+          <strong style="color:var(--text)">APIs &amp; Services → Credentials → Create Credentials → API key.</strong><br>
+          Click the new key → <em>Restrict key</em> → under "API restrictions" choose <code>YouTube Data API v3</code>. Under "Application restrictions" choose <em>HTTP referrers</em> and add your GitHub Pages URL, e.g. <code>https://yourname.github.io/*</code>.<br><br>
+          Paste it into <code>CONFIG.YT_API_KEY</code> near the top of the <code>&lt;script&gt;</code> block in index.html, then redeploy.
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>3. Create an OAuth Client ID</h3>
+        <div class="oauth-box">
+          <strong style="color:var(--text)">Credentials → Create Credentials → OAuth client ID</strong> → Application type: <em>Web application</em>.<br>
+          Under <em>Authorized JavaScript origins</em>, add exactly the origin you'll deploy to, e.g. <code>https://yourname.github.io</code> (no path, no trailing slash). Add <code>http://localhost:PORT</code> too if you test locally.<br>
+          No redirect URI is needed — this app uses Google Identity Services' token-client popup flow, not a redirect flow.<br><br>
+          Paste the Client ID into <code>CONFIG.GOOGLE_CLIENT_ID</code> in index.html.
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>4. OAuth consent screen</h3>
+        <div class="oauth-box">
+          Set <em>User type</em> to External (unless you have Workspace). Add the <code>youtube.readonly</code> scope under "Scopes." While your app is in "Testing" mode, add your own Google account under <em>Test users</em> or sign-in will be blocked. Publish the app when ready for other users.
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>5. Deploy to GitHub Pages</h3>
+        <div class="oauth-box">
+          Push this single <code>index.html</code> to a repo → repo <strong style="color:var(--text)">Settings → Pages</strong> → set source to your branch/root → save. Your site will be live at <code>https://yourname.github.io/reponame/</code>. Everything here is 100% static — no build step, no server, no database.
+        </div>
+      </div>
+    `;
+  }
+}
+function switchHtml(key, val){
+  return `<label class="switch"><input type="checkbox" ${val?"checked":""} onchange="Store.updateSetting('${key}', this.checked)"><span class="track"><span class="thumb"></span></span></label>`;
+}
+window.setTheme = function(t){ Store.updateSetting("theme", t); renderSettingsTabBody(); };
+window.setAccent = function(c){ Store.updateSetting("accent", c); renderSettingsTabBody(); };
+window.setLayout = function(l){ Store.updateSetting("layout", l); renderSettingsTabBody(); rerenderChrome(); navigate(currentRoute()); };
+
+function applySettingsToDOM(){
+  const s = Store.settings;
+  const root = document.documentElement;
+  const resolvedTheme = s.theme === "system"
+    ? (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+    : s.theme;
+  root.setAttribute("data-theme", resolvedTheme);
+  root.setAttribute("data-density", s.density);
+  root.setAttribute("data-layout", s.layout);
+  root.setAttribute("data-tv-mode", s.layout === "tv" ? "true" : "false");
+  root.style.setProperty("--accent", s.accent);
+  root.style.setProperty("--accent-dim", s.accent + "55");
+  if(s.reduceMotion){ root.style.setProperty("--motion-scale","0"); }
+  document.body.style.setProperty("scroll-behavior", s.reduceMotion ? "auto" : "smooth");
+}
+
+/* ---------------------------------------------------------------------
+   7. TV / KEYBOARD NAV
+   Arrow-key spatial navigation across .tv-focusable elements, plus
+   Space to play/pause the active player and Enter to activate.
+   Active in both layouts (arrow nav is broadly useful), but the
+   persistent hint bar + larger targets only show in TV layout.
+   --------------------------------------------------------------------- */
+let tvFocusables = [];
+let tvFocusIndex = 0;
+
+function setupTvFocusables(){
+  tvFocusables = Array.from(document.querySelectorAll(".tv-focusable"))
+    .filter(el => el.offsetParent !== null);
+  tvFocusIndex = Math.min(tvFocusIndex, Math.max(0, tvFocusables.length-1));
+}
+
+function spatialNav(dir){
+  if(!tvFocusables.length) return;
+  const active = document.activeElement;
+  const curRect = tvFocusables.includes(active) ? active.getBoundingClientRect() : null;
+  if(!curRect){ tvFocusables[0].focus(); return; }
+  const cx = curRect.left + curRect.width/2, cy = curRect.top + curRect.height/2;
+  let best = null, bestScore = Infinity;
+  tvFocusables.forEach(el => {
+    if(el === active) return;
+    const r = el.getBoundingClientRect();
+    const ex = r.left + r.width/2, ey = r.top + r.height/2;
+    const dx = ex - cx, dy = ey - cy;
+    let primary, ok;
+    if(dir==="right"){ primary = dx; ok = dx > 4 && Math.abs(dy) < curRect.height*3; }
+    else if(dir==="left"){ primary = -dx; ok = dx < -4 && Math.abs(dy) < curRect.height*3; }
+    else if(dir==="down"){ primary = dy; ok = dy > 4; }
+    else { primary = -dy; ok = dy < -4; }
+    if(!ok) return;
+    const score = primary + Math.abs(dir==="left"||dir==="right" ? dy : dx) * 1.4;
+    if(score < bestScore){ bestScore = score; best = el; }
+  });
+  if(best){ best.focus(); best.scrollIntoView({block:"nearest", inline:"nearest", behavior: Store.settings.reduceMotion?"auto":"smooth"}); }
+}
+
+document.addEventListener("keydown", (e) => {
+  if(SETTINGS_OPEN && e.key !== "Escape") return; // let settings panel own keys except Esc
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  const typing = tag === "INPUT" || tag === "TEXTAREA";
+
+  if(e.key === "s" && !typing && !e.metaKey && !e.ctrlKey){ openSettings(); return; }
+  if(e.key === "Escape"){
+    if(SETTINGS_OPEN){ closeSettings(); return; }
+    if(currentRoute() !== "home"){ go("home"); return; }
+  }
+  if(typing) return;
+
+  if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)){
+    e.preventDefault();
+    setupTvFocusables();
+    spatialNav({ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right"}[e.key]);
+  } else if(e.key === " "){
+    const path = routeParts().path;
+    if(path === "watch" || path === "shorts"){
       e.preventDefault();
-      const query = document.getElementById('search-input').value.trim();
-      if (!query) return;
-
-      if (!STATE.apiKey) {
-        // Fallback filter on mock data
-        const filtered = MOCK_VIDEOS.filter(v => v.title.toLowerCase().includes(query.toLowerCase()));
-        renderHomeGrid(filtered.length ? filtered : MOCK_VIDEOS);
-        navigateTo('home');
-        return;
-      }
-
-      try {
-        const res = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=16&q=${encodeURIComponent(query)}&type=video&key=${STATE.apiKey}`);
-        const data = await res.json();
-        if (data.items) {
-          const videos = data.items.map(item => ({
-            id: item.id.videoId,
-            title: item.snippet.title,
-            channelTitle: item.snippet.channelTitle,
-            views: 'Search Result',
-            publishedAt: new Date(item.snippet.publishedAt).toLocaleDateString(),
-            thumbnail: item.snippet.thumbnails.medium.url
-          }));
-          renderHomeGrid(videos);
-          navigateTo('home');
-        }
-      } catch (err) {
-        console.error("Search API Error:", err);
-      }
+      togglePlayPause();
     }
+  } else if(e.key === "Enter"){
+    if(document.activeElement && document.activeElement.click) document.activeElement.click();
+  }
+});
 
-    async function fetchVideoDetails(videoId) {
-      try {
-        const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${videoId}&key=${STATE.apiKey}`);
-        const data = await res.json();
-        if (data.items && data.items.length > 0) {
-          const v = data.items[0];
-          document.getElementById('watch-title').innerText = v.snippet.title;
-          document.getElementById('watch-channel').innerText = v.snippet.channelTitle;
-          document.getElementById('watch-views').innerText = parseInt(v.statistics.viewCount).toLocaleString() + ' views';
-          document.getElementById('watch-date').innerText = new Date(v.snippet.publishedAt).toLocaleDateString();
-          document.getElementById('watch-description').innerText = v.snippet.description;
-          document.getElementById('like-count').innerText = parseInt(v.statistics.likeCount || 0).toLocaleString();
-        }
-      } catch (err) {
-        console.error("Video details fetch error:", err);
-      }
+function togglePlayPause(){
+  // postMessage control against the active YouTube iframe (works for
+  // both youtube-nocookie.com embed and standard embed).
+  const iframe = document.querySelector(".player-wrap iframe, .shorts-stage:hover iframe, .shorts-stage iframe");
+  if(!iframe) return;
+  try{
+    iframe.contentWindow.postMessage(JSON.stringify({event:"listening", id: 1}), "*");
+    // Toggle: send playVideo, if already playing YT will just continue; we track a data flag to alternate.
+    const playing = iframe.dataset.playing !== "false";
+    iframe.contentWindow.postMessage(JSON.stringify({event:"command", func: playing ? "pauseVideo" : "playVideo", args:[]}), "*");
+    iframe.dataset.playing = playing ? "false" : "true";
+  }catch(e){ /* cross-origin postMessage best-effort only */ }
+}
+
+/* ---------------------------------------------------------------------
+   8. INIT
+   --------------------------------------------------------------------- */
+function boot(){
+  applySettingsToDOM();
+  if(window.matchMedia){
+    window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+      if(Store.settings.theme === "system") applySettingsToDOM();
+    });
+  }
+  if(!location.hash) location.hash = "#/home";
+  navigate();
+
+  // Kick off GIS init once the script tag loads (it's async/defer).
+  const gisPoll = setInterval(() => {
+    if(window.google && google.accounts && google.accounts.oauth2){
+      Api.initGis();
+      clearInterval(gisPoll);
     }
+  }, 200);
+  setTimeout(()=>clearInterval(gisPoll), 15000);
+}
 
-    async function fetchComments(videoId) {
-      const container = document.getElementById('comments-container');
-      container.innerHTML = `<p class="text-xs text-zinc-500">Loading comments...</p>`;
-      try {
-        const res = await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=10&key=${STATE.apiKey}`);
-        const data = await res.json();
-        container.innerHTML = '';
-        if (data.items && data.items.length > 0) {
-          data.items.forEach(c => {
-            const snippet = c.snippet.topLevelComment.snippet;
-            const div = document.createElement('div');
-            div.className = "flex gap-3 bg-zinc-900/40 p-3 rounded-xl border border-zinc-800/40";
-            div.innerHTML = `
-              <img src="${snippet.authorProfileImageUrl}" class="w-8 h-8 rounded-full" />
-              <div class="space-y-1">
-                <div class="flex items-center gap-2">
-                  <span class="text-xs font-semibold text-zinc-300">${snippet.authorDisplayName}</span>
-                  <span class="text-[10px] text-zinc-500">${new Date(snippet.publishedAt).toLocaleDateString()}</span>
-                </div>
-                <p class="text-xs text-zinc-300 leading-normal">${snippet.textDisplay}</p>
-              </div>
-            `;
-            container.appendChild(div);
-          });
-        } else {
-          container.innerHTML = `<p class="text-xs text-zinc-500">No comments found.</p>`;
-        }
-      } catch (err) {
-        container.innerHTML = `<p class="text-xs text-zinc-500">Unable to load live comments (Check API Key).</p>`;
-      }
-    }
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", boot);
+} else {
+  boot();
+}
 
-    // GOOGLE OAUTH SIGN IN
-    function handleAuth() {
-      if (!STATE.clientId) {
-        alert("Please configure your Google OAuth Client ID in Settings first!");
-        openModal('settings-modal');
-        return;
-      }
+// expose a few things on window for inline handlers
+window.go = go; window.Store = Store; window.Api = Api; window.renderSettingsTabBody = renderSettingsTabBody;
 
-      const client = google.accounts.oauth2.initTokenClient({
-        client_id: STATE.clientId,
-        scope: 'https://www.googleapis.com/auth/youtube.readonly',
-        callback: (response) => {
-          if (response.access_token) {
-            STATE.accessToken = response.access_token;
-            localStorage.setItem('yt_access_token', response.access_token);
-            updateAuthUI(true);
-            loadSubscriptions();
-          }
-        },
-      });
-      client.requestAccessToken();
-    }
-
-    function updateAuthUI(isSignedIn) {
-      const container = document.getElementById('auth-container');
-      if (isSignedIn) {
-        container.innerHTML = `
-          <button onclick="signOut()" class="flex items-center gap-2 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-3 py-1.5 rounded-full tv-focusable">
-            <i class="fa-solid fa-check text-green-400"></i>
-            <span>Connected</span>
-          </button>
-        `;
-      }
-    }
-
-    async function loadSubscriptions() {
-      const grid = document.getElementById('subscriptions-grid');
-      const desc = document.getElementById('sub-status-desc');
-      
-      if (!STATE.accessToken) {
-        grid.innerHTML = `<p class="text-xs text-zinc-500 col-span-full">Sign in to view subscriptions.</p>`;
-        return;
-      }
-
-      try {
-        const res = await fetch(`https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&maxResults=12`, {
-          headers: { Authorization: `Bearer ${STATE.accessToken}` }
-        });
-        const data = await res.json();
-        if (data.items) {
-          desc.innerText = `Showing ${data.items.length} channels from your Google Account`;
-          grid.innerHTML = '';
-          data.items.forEach(sub => {
-            const card = document.createElement('div');
-            card.className = "bg-darkCard p-4 rounded-xl border border-zinc-800 flex items-center gap-3 tv-focusable";
-            card.innerHTML = `
-              <img src="${sub.snippet.thumbnails.default.url}" class="w-10 h-10 rounded-full" />
-              <div class="overflow-hidden">
-                <h4 class="text-xs font-bold text-zinc-200 truncate">${sub.snippet.title}</h4>
-                <p class="text-[10px] text-zinc-500">Subscribed</p>
-              </div>
-            `;
-            grid.appendChild(card);
-          });
-        }
-      } catch (err) {
-        console.error("Sub error:", err);
-      }
-    }
-
-    function signOut() {
-      STATE.accessToken = '';
-      localStorage.removeItem('yt_access_token');
-      location.reload();
-    }
-
-    // MODAL & SETTINGS
-    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-
-    function loadSettingsInputs() {
-      document.getElementById('cfg-api-key').value = STATE.apiKey;
-      document.getElementById('cfg-client-id').value = STATE.clientId;
-      document.getElementById('cfg-player-type').value = STATE.playerType;
-      document.getElementById('cfg-autoplay').checked = STATE.autoplay;
-      document.getElementById('cfg-compact').checked = STATE.compact;
-    }
-
-    function saveSettings() {
-      STATE.apiKey = document.getElementById('cfg-api-key').value.trim();
-      STATE.clientId = document.getElementById('cfg-client-id').value.trim();
-      STATE.playerType = document.getElementById('cfg-player-type').value;
-      STATE.autoplay = document.getElementById('cfg-autoplay').checked;
-      STATE.compact = document.getElementById('cfg-compact').checked;
-
-      localStorage.setItem('yt_api_key', STATE.apiKey);
-      localStorage.setItem('yt_client_id', STATE.clientId);
-      localStorage.setItem('yt_player_type', STATE.playerType);
-      localStorage.setItem('yt_autoplay', STATE.autoplay);
-      localStorage.setItem('yt_compact', STATE.compact);
-
-      closeModal('settings-modal');
-      location.reload();
-    }
-
-    // TV / SPATIAL NAVIGATION
-    function toggleTVMode() {
-      STATE.isTVMode = !STATE.isTVMode;
-      document.body.classList.toggle('tv-mode', STATE.isTVMode);
-      const btn = document.getElementById('tv-mode-btn');
-      btn.classList.toggle('bg-brand', STATE.isTVMode);
-      btn.classList.toggle('text-white', STATE.isTVMode);
-
-      if (STATE.isTVMode) {
-        focusTVElement(0);
-      }
-    }
-
-    function setupTVNavigation() {
-      window.addEventListener('keydown', (e) => {
-        if (!STATE.isTVMode) return;
-
-        const focusables = Array.from(document.querySelectorAll('.tv-focusable:not(.hidden)'));
-        if (!focusables.length) return;
-
-        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-          e.preventDefault();
-          if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-            STATE.tvFocusedIndex = (STATE.tvFocusedIndex + 1) % focusables.length;
-          } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-            STATE.tvFocusedIndex = (STATE.tvFocusedIndex - 1 + focusables.length) % focusables.length;
-          }
-          focusTVElement(STATE.tvFocusedIndex);
-        } else if (e.key === 'Enter') {
-          const active = focusables[STATE.tvFocusedIndex];
-          if (active) active.click();
-        }
-      });
-    }
-
-    function focusTVElement(index) {
-      const focusables = Array.from(document.querySelectorAll('.tv-focusable:not(.hidden)'));
-      focusables.forEach(el => el.classList.remove('tv-focused'));
-      if (focusables[index]) {
-        focusables[index].classList.add('tv-focused');
-        focusables[index].focus();
-      }
-    }
-
-    // ENGAGEMENT HELPERS
-    function toggleLike() {
-      const icon = document.getElementById('like-icon');
-      icon.classList.toggle('fa-solid');
-      icon.classList.toggle('text-brand');
-    }
-
-    function toggleDislike() {
-      const icon = document.getElementById('dislike-icon');
-      icon.classList.toggle('fa-solid');
-    }
-
-    function shareVideo() {
-      if (navigator.share) {
-        navigator.share({ title: 'Watch Video', url: window.location.href });
-      } else {
-        navigator.clipboard.writeText(window.location.href);
-        alert('Video link copied to clipboard!');
-      }
-    }
-
-    function filterCategory(cat) {
-      if (cat === 'All') {
-        renderHomeGrid(MOCK_VIDEOS);
-      } else {
-        const filtered = MOCK_VIDEOS.filter(v => v.category === cat);
-        renderHomeGrid(filtered.length ? filtered : MOCK_VIDEOS);
-      }
-    }
-  </script>
+})();
+</script>
 </body>
 </html>
